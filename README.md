@@ -32,6 +32,20 @@ Then visit:
 http://localhost:5173
 ```
 
+## Sui Contract Configuration
+
+Copy `.env.example` to `.env` after the Move package is published:
+
+```bash
+VITE_INVO_RECEIVABLE_PACKAGE_ID=0x...
+VITE_INVO_RECEIVABLE_MODULE=receivable
+VITE_INVO_INVOICE_COUNTER_ID=0x...
+```
+
+The frontend already has transaction-builder placeholders for create, list, buy,
+pay, and cancel actions. They intentionally require these values before building
+real Move calls.
+
 ## Deployment Direction
 
 Cloudflare Pages is fine for the frontend. Build command: `npm run build`.

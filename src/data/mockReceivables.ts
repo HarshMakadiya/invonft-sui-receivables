@@ -1,0 +1,84 @@
+import type { DemoWallet, Evidence, Invoice, WalletRole } from "../types/receivable";
+
+export const wallets: Record<WalletRole, DemoWallet> = {
+  issuer: { label: "Issuer", address: "0xissuer...7a1", balance: 1440 },
+  buyer: { label: "Buyer", address: "0xbuyer...4d2", balance: 2180 },
+  payer: { label: "Payer", address: "0xpayer...91c", balance: 1250 },
+};
+
+export const starterInvoices: Invoice[] = [
+  {
+    id: "INV-0001",
+    objectId: "0x8f3a...c12",
+    clientName: "Acme Labs",
+    clientEmail: "ap@acmelabs.test",
+    description: "Website development invoice",
+    amount: 1000,
+    dueDate: "2026-07-10",
+    issuer: wallets.issuer.address,
+    payer: wallets.payer.address,
+    paymentRecipient: wallets.buyer.address,
+    buyer: wallets.buyer.address,
+    status: "PENDING",
+    financingStatus: "FINANCED",
+    financingPrice: 900,
+    blobId: "walrus_blob_website_invoice",
+    evidence: evidence({ complete: true, unpaid: true }),
+    events: [
+      "Receivable object created",
+      "Evidence package certified on Walrus",
+      "Issuer listed rights at 900 SUI",
+      "Buyer acquired payment recipient rights",
+    ],
+  },
+  {
+    id: "INV-0002",
+    objectId: "0x43bd...9e1",
+    clientName: "Northstar Studio",
+    clientEmail: "finance@northstar.test",
+    description: "Brand identity milestone",
+    amount: 650,
+    dueDate: "2026-07-18",
+    issuer: wallets.issuer.address,
+    payer: wallets.payer.address,
+    paymentRecipient: wallets.issuer.address,
+    buyer: null,
+    status: "PENDING",
+    financingStatus: "LISTED",
+    financingPrice: 585,
+    blobId: "walrus_blob_brand_invoice",
+    evidence: evidence({ complete: false, unpaid: true }),
+    events: ["Receivable object created", "Evidence package uploaded", "Listed at 10% discount"],
+  },
+  {
+    id: "INV-0003",
+    objectId: "0x5aa0...300",
+    clientName: "Orbit Works",
+    clientEmail: "payables@orbit.test",
+    description: "Dashboard UX sprint",
+    amount: 420,
+    dueDate: "2026-06-24",
+    issuer: wallets.issuer.address,
+    payer: wallets.payer.address,
+    paymentRecipient: wallets.issuer.address,
+    buyer: null,
+    status: "PAID",
+    financingStatus: "NOT_LISTED",
+    financingPrice: 0,
+    blobId: "walrus_blob_dashboard_invoice",
+    evidence: evidence({ complete: true, unpaid: false }),
+    events: ["Receivable object created", "Evidence package uploaded", "Invoice paid to issuer"],
+  },
+];
+
+export function evidence(options: { complete: boolean; unpaid: boolean }): Evidence {
+  return {
+    invoicePdf: true,
+    lineItemsMatch: true,
+    payerWalletPresent: true,
+    dueDateValid: true,
+    unpaid: options.unpaid,
+    evidenceComplete: options.complete,
+    walrusAvailable: true,
+  };
+}

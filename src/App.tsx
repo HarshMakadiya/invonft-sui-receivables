@@ -7,19 +7,15 @@ import {
 import { ConnectButton } from "@mysten/dapp-kit-react/ui";
 import {
   ArrowRight,
-  BadgeCheck,
   Banknote,
-  BarChart3,
   Check,
   CircleDollarSign,
   Clock3,
   DatabaseZap,
-  ExternalLink,
   FileCheck2,
   FilePlus2,
   Gauge,
   Landmark,
-  Layers3,
   LayoutDashboard,
   LineChart,
   LockKeyhole,
@@ -29,129 +25,15 @@ import {
   ShieldCheck,
   Sparkles,
   Store,
-  UserRoundCheck,
   WalletCards,
   X,
 } from "lucide-react";
 import { FormEvent, useMemo, useState } from "react";
-
-type WalletRole = "issuer" | "buyer" | "payer";
-type Page = "dashboard" | "create" | "marketplace" | "portfolio";
-type InvoiceStatus = "PENDING" | "PAID" | "OVERDUE";
-type FinancingStatus = "NOT_LISTED" | "LISTED" | "FINANCED" | "CANCELLED";
-
-type Evidence = {
-  invoicePdf: boolean;
-  lineItemsMatch: boolean;
-  payerWalletPresent: boolean;
-  dueDateValid: boolean;
-  unpaid: boolean;
-  evidenceComplete: boolean;
-  walrusAvailable: boolean;
-};
-
-type Invoice = {
-  id: string;
-  objectId: string;
-  clientName: string;
-  clientEmail: string;
-  description: string;
-  amount: number;
-  dueDate: string;
-  issuer: string;
-  payer: string;
-  paymentRecipient: string;
-  buyer: string | null;
-  status: InvoiceStatus;
-  financingStatus: FinancingStatus;
-  financingPrice: number;
-  blobId: string;
-  evidence: Evidence;
-  events: string[];
-};
-
-const wallets: Record<WalletRole, { label: string; address: string; balance: number }> = {
-  issuer: { label: "Issuer", address: "0xissuer...7a1", balance: 1440 },
-  buyer: { label: "Buyer", address: "0xbuyer...4d2", balance: 2180 },
-  payer: { label: "Payer", address: "0xpayer...91c", balance: 1250 },
-};
-
-const starterInvoices: Invoice[] = [
-  {
-    id: "INV-0001",
-    objectId: "0x8f3a...c12",
-    clientName: "Acme Labs",
-    clientEmail: "ap@acmelabs.test",
-    description: "Website development invoice",
-    amount: 1000,
-    dueDate: "2026-07-10",
-    issuer: wallets.issuer.address,
-    payer: wallets.payer.address,
-    paymentRecipient: wallets.buyer.address,
-    buyer: wallets.buyer.address,
-    status: "PENDING",
-    financingStatus: "FINANCED",
-    financingPrice: 900,
-    blobId: "walrus_blob_website_invoice",
-    evidence: evidence({ complete: true, unpaid: true }),
-    events: [
-      "Receivable object created",
-      "Evidence package certified on Walrus",
-      "Issuer listed rights at 900 SUI",
-      "Buyer acquired payment recipient rights",
-    ],
-  },
-  {
-    id: "INV-0002",
-    objectId: "0x43bd...9e1",
-    clientName: "Northstar Studio",
-    clientEmail: "finance@northstar.test",
-    description: "Brand identity milestone",
-    amount: 650,
-    dueDate: "2026-07-18",
-    issuer: wallets.issuer.address,
-    payer: wallets.payer.address,
-    paymentRecipient: wallets.issuer.address,
-    buyer: null,
-    status: "PENDING",
-    financingStatus: "LISTED",
-    financingPrice: 585,
-    blobId: "walrus_blob_brand_invoice",
-    evidence: evidence({ complete: false, unpaid: true }),
-    events: ["Receivable object created", "Evidence package uploaded", "Listed at 10% discount"],
-  },
-  {
-    id: "INV-0003",
-    objectId: "0x5aa0...300",
-    clientName: "Orbit Works",
-    clientEmail: "payables@orbit.test",
-    description: "Dashboard UX sprint",
-    amount: 420,
-    dueDate: "2026-06-24",
-    issuer: wallets.issuer.address,
-    payer: wallets.payer.address,
-    paymentRecipient: wallets.issuer.address,
-    buyer: null,
-    status: "PAID",
-    financingStatus: "NOT_LISTED",
-    financingPrice: 0,
-    blobId: "walrus_blob_dashboard_invoice",
-    evidence: evidence({ complete: true, unpaid: false }),
-    events: ["Receivable object created", "Evidence package uploaded", "Invoice paid to issuer"],
-  },
-];
-
-function evidence(options: { complete: boolean; unpaid: boolean }): Evidence {
-  return {
-    invoicePdf: true,
-    lineItemsMatch: true,
-    payerWalletPresent: true,
-    dueDateValid: true,
-    unpaid: options.unpaid,
-    evidenceComplete: options.complete,
-    walrusAvailable: true,
-  };
-}
+import { starterInvoices, evidence, wallets } from "./data/mockReceivables";
+import { formatCompactSui, formatSui, shortAddress } from "./lib/format";
+import { healthScore } from "./lib/healthScore";
+import { getReceivableContractReadiness } from "./lib/receivableContract";
+import type { DemoWallet, FinancingStatus, Invoice, InvoiceStatus, Page, WalletRole } from "./types/receivable";
 
 function App() {
   const [page, setPage] = useState<Page>("dashboard");
@@ -163,6 +45,7 @@ function App() {
 
   const selectedInvoice = invoices.find((invoice) => invoice.id === selectedInvoiceId) ?? invoices[0];
   const wallet = wallets[walletRole];
+  const contractReadiness = getReceivableContractReadiness();
 
   const stats = useMemo(() => {
     const pending = invoices.filter((invoice) => invoice.status === "PENDING").length;
@@ -296,6 +179,17 @@ function App() {
             </div>
             <p className="mt-2 text-sm leading-6 text-white/70">
               Cloudflare Pages for fast demo hosting. Walrus Sites can be added for a Sui-native static deployment.
+            </p>
+          </div>
+          <div className="mt-3 rounded-[1.6rem] border border-white/10 bg-white/[0.06] p-4">
+            <div className="flex items-center gap-2 text-white">
+              <ShieldCheck size={16} />
+              <p className="text-sm font-bold">Contract config</p>
+            </div>
+            <p className="mt-2 text-sm leading-6 text-white/65">
+              {contractReadiness.ready
+                ? "Ready for transaction builders."
+                : `Waiting for ${contractReadiness.missing.length} env value${contractReadiness.missing.length === 1 ? "" : "s"}.`}
             </p>
           </div>
         </aside>
@@ -795,7 +689,7 @@ function Marketplace({
   );
 }
 
-function Portfolio({ invoices, wallet }: { invoices: Invoice[]; wallet: { label: string; address: string; balance: number } }) {
+function Portfolio({ invoices, wallet }: { invoices: Invoice[]; wallet: DemoWallet }) {
   const owned = invoices.filter((invoice) => invoice.buyer === wallet.address);
   const expectedSettlement = owned.filter((invoice) => invoice.status === "PENDING").reduce((sum, invoice) => sum + invoice.amount, 0);
   return (
@@ -979,38 +873,6 @@ function Fact({ label, value }: { label: string; value: string }) {
       <span className="max-w-[190px] truncate text-right text-sm font-black">{value}</span>
     </div>
   );
-}
-
-function healthScore(invoice: Invoice) {
-  const checks = [
-    { label: "Payer wallet present", passed: invoice.evidence.payerWalletPresent, points: 15 },
-    { label: "Invoice PDF uploaded", passed: invoice.evidence.invoicePdf, points: 20 },
-    { label: "Line items match", passed: invoice.evidence.lineItemsMatch, points: 15 },
-    { label: "Due date valid", passed: invoice.evidence.dueDateValid, points: 15 },
-    { label: "Invoice unpaid", passed: invoice.status === "PENDING", points: 15 },
-    { label: "Evidence complete", passed: invoice.evidence.evidenceComplete, points: 10 },
-    { label: "Walrus blob available", passed: invoice.evidence.walrusAvailable, points: 10 },
-  ];
-
-  return {
-    checks,
-    score: checks.reduce((sum, check) => sum + (check.passed ? check.points : 0), 0),
-  };
-}
-
-function formatSui(value: number) {
-  return `${value.toLocaleString()} SUI`;
-}
-
-function formatCompactSui(value: number) {
-  if (value >= 1000) {
-    return `${(value / 1000).toFixed(value % 1000 === 0 ? 0 : 1)}K SUI`;
-  }
-  return formatSui(value);
-}
-
-function shortAddress(address: string) {
-  return address.length > 14 ? `${address.slice(0, 8)}...${address.slice(-3)}` : address;
 }
 
 export default App;
