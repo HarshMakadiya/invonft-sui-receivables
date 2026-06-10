@@ -54,6 +54,12 @@ real Move calls.
 Walrus URLs are public Testnet endpoints. They are not secrets. Mainnet should
 not use a public unauthenticated publisher.
 
+The current action buttons run in hybrid mode:
+
+- Without a connected wallet and contract env vars, they update the local demo state.
+- With a connected wallet, package ID, and `InvoiceCounter` ID, create/list/buy/pay
+  can submit Sui transactions through dApp Kit.
+
 ## Move Package
 
 The Move package lives in `move/`.

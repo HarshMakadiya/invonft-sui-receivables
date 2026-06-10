@@ -1,4 +1,5 @@
 import {
+  useDAppKit,
   useCurrentAccount,
   useCurrentNetwork,
   useCurrentWallet,
@@ -34,10 +35,18 @@ import { buildEvidencePackage } from "./lib/evidencePackage";
 import { formatCompactSui, formatSui, shortAddress } from "./lib/format";
 import { healthScore } from "./lib/healthScore";
 import { getReceivableContractReadiness } from "./lib/receivableContract";
+import {
+  buildBuyReceivableTx,
+  buildCreateReceivableTx,
+  buildListForFinancingTx,
+  buildPayInvoiceTx,
+} from "./lib/receivableTransactions";
 import { evidenceUrl, uploadEvidencePackage, walrusConfig } from "./lib/walrus";
 import type { DemoWallet, FinancingStatus, Invoice, InvoiceStatus, Page, WalletRole } from "./types/receivable";
 
 function App() {
+  const account = useCurrentAccount();
+  const dAppKit = useDAppKit();
   const [page, setPage] = useState<Page>("dashboard");
   const [walletRole, setWalletRole] = useState<WalletRole>("issuer");
   const [selectedInvoiceId, setSelectedInvoiceId] = useState("INV-0001");
@@ -49,6 +58,7 @@ function App() {
   const selectedInvoice = invoices.find((invoice) => invoice.id === selectedInvoiceId) ?? invoices[0];
   const wallet = wallets[walletRole];
   const contractReadiness = getReceivableContractReadiness();
+  const canSubmitTransactions = Boolean(account && contractReadiness.ready);
 
   const stats = useMemo(() => {
     const pending = invoices.filter((invoice) => invoice.status === "PENDING").length;
@@ -73,33 +83,94 @@ function App() {
     setInvoices((current) => current.map((invoice) => (invoice.id === id ? update(invoice) : invoice)));
   }
 
-  function listInvoice(invoice: Invoice) {
+  async function trySubmitTransaction(label: string, buildTransaction: () => ReturnType<typeof buildCreateReceivableTx>) {
+    if (!canSubmitTransactions) {
+      return null;
+    }
+
+    try {
+      const result = await dAppKit.signAndExecuteTransaction({
+        transaction: buildTransaction(),
+      });
+
+      if (result.FailedTransaction) {
+        throw new Error(result.FailedTransaction.status.error?.message ?? "Transaction failed");
+      }
+
+      notify(`${label} submitted: ${shortAddress(result.Transaction.digest)}`);
+      return result.Transaction.digest;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Transaction failed";
+      notify(`${label} stayed in demo mode: ${message}`);
+      return null;
+    }
+  }
+
+  function hasRealObjectId(invoice: Invoice) {
+    return invoice.objectId.startsWith("0x") && !invoice.objectId.includes("...");
+  }
+
+  async function listInvoice(invoice: Invoice) {
+    const digest = hasRealObjectId(invoice)
+      ? await trySubmitTransaction("List transaction", () =>
+          buildListForFinancingTx({
+            invoiceObjectId: invoice.objectId,
+            financingPriceSui: Math.floor(invoice.amount * 0.9),
+            discountBps: 1000,
+          }),
+        )
+      : null;
+
     updateInvoice(invoice.id, (item) => ({
       ...item,
       financingStatus: "LISTED",
       financingPrice: Math.floor(item.amount * 0.9),
-      events: [...item.events, "Issuer listed payment rights for financing"],
+      txDigest: digest ?? item.txDigest,
+      events: [...item.events, digest ? `List transaction submitted: ${shortAddress(digest)}` : "Issuer listed payment rights for financing"],
     }));
     notify(`${invoice.id} listed at 10% discount`);
   }
 
-  function buyInvoice(invoice: Invoice) {
+  async function buyInvoice(invoice: Invoice) {
+    const digest = hasRealObjectId(invoice)
+      ? await trySubmitTransaction("Buy transaction", () =>
+          buildBuyReceivableTx({
+            invoiceObjectId: invoice.objectId,
+            financingPriceSui: invoice.financingPrice,
+          }),
+        )
+      : null;
+
     updateInvoice(invoice.id, (item) => ({
       ...item,
       financingStatus: "FINANCED",
       paymentRecipient: wallet.address,
       buyer: wallet.address,
-      events: [...item.events, `Payment rights moved to ${wallet.label}`],
+      txDigest: digest ?? item.txDigest,
+      events: [...item.events, digest ? `Buy transaction submitted: ${shortAddress(digest)}` : `Payment rights moved to ${wallet.label}`],
     }));
     notify(`Payment recipient changed to ${wallet.label}`);
   }
 
-  function payInvoice(invoice: Invoice) {
+  async function payInvoice(invoice: Invoice) {
+    const digest = hasRealObjectId(invoice)
+      ? await trySubmitTransaction("Pay transaction", () =>
+          buildPayInvoiceTx({
+            invoiceObjectId: invoice.objectId,
+            amountSui: invoice.amount,
+          }),
+        )
+      : null;
+
     updateInvoice(invoice.id, (item) => ({
       ...item,
       status: "PAID",
       evidence: { ...item.evidence, unpaid: false },
-      events: [...item.events, `Paid ${formatSui(item.amount)} to ${shortAddress(item.paymentRecipient)}`],
+      txDigest: digest ?? item.txDigest,
+      events: [
+        ...item.events,
+        digest ? `Pay transaction submitted: ${shortAddress(digest)}` : `Paid ${formatSui(item.amount)} to ${shortAddress(item.paymentRecipient)}`,
+      ],
     }));
     notify(`Funds routed to ${shortAddress(invoice.paymentRecipient)}`);
   }
@@ -146,6 +217,17 @@ function App() {
       }
     }
 
+    const dueDateMs = new Date(dueDate).getTime();
+    const createDigest = await trySubmitTransaction("Create transaction", () =>
+      buildCreateReceivableTx({
+        payer: wallets.payer.address,
+        amountSui: amount,
+        dueDateMs,
+        blobId,
+        metadataChecksum: evidencePackage.metadataChecksum,
+      }),
+    );
+
     const invoice: Invoice = {
       id,
       objectId: `0xmock...${next}`,
@@ -164,8 +246,13 @@ function App() {
       blobId,
       blobObjectId,
       metadataChecksum: evidencePackage.metadataChecksum,
+      txDigest: createDigest ?? undefined,
       evidence: evidence({ complete: true, unpaid: true }),
-      events: ["Receivable object drafted", evidenceEvent],
+      events: [
+        "Receivable object drafted",
+        evidenceEvent,
+        createDigest ? `Create transaction submitted: ${shortAddress(createDigest)}` : "Create transaction pending contract configuration",
+      ],
     };
 
     setInvoices((current) => [invoice, ...current]);
@@ -498,6 +585,7 @@ function InvoiceInspector({
           <Fact label="Payment recipient" value={shortAddress(invoice.paymentRecipient)} />
           <Fact label="Walrus blob" value={invoice.blobId} />
           <Fact label="Checksum" value={invoice.metadataChecksum ?? "Not generated"} />
+          <Fact label="Latest tx" value={invoice.txDigest ? shortAddress(invoice.txDigest) : "Demo only"} />
         </div>
 
         <div className="mt-5 grid grid-cols-2 gap-2">
