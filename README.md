@@ -10,6 +10,7 @@ The app focuses on product workflow instead of pitch content:
 - Financing marketplace
 - Buyer portfolio
 - Sui dApp Kit wallet connection on Testnet
+- Public verification links for Sui objects, transaction digests, and Walrus blobs
 - Mock issuer, buyer, and payer roles for demo flow simulation
 
 The repo now also includes a Sui Move package under `move/` for the receivable
@@ -82,6 +83,23 @@ a `sha256:` metadata checksum. The form has an optional checkbox to upload that
 JSON to the Walrus Testnet publisher. If the upload is disabled or fails, the UI
 falls back to a local mock blob ID so the demo remains usable.
 
+## Public Verification
+
+The selected receivable panel labels each invoice as either demo-local or
+on-chain. Real Sui object IDs link to Suiscan Testnet, submitted transaction
+digests link to the transaction view, and real Walrus blob IDs link to the
+configured aggregator endpoint. Mock IDs are shown but intentionally disabled.
+
+## Local Demo Flow
+
+This flow does not require publishing the Move package:
+
+1. Start on the command center and inspect the selected receivable.
+2. Use the Issuer role to list payment rights.
+3. Switch to Buyer and buy the listed rights from the marketplace.
+4. Switch to Payer and pay the invoice.
+5. Confirm the payment recipient and activity log update through the full flow.
+
 ## Deployment Direction
 
 Cloudflare Pages is fine for the frontend. Build command: `npm run build`.
@@ -91,9 +109,12 @@ Walrus Sites is the Sui-native static hosting path: deploy the built `dist/`
 folder with `site-builder`. It is static-only, so no SSR, no server routes, and
 no private environment secrets in the frontend bundle.
 
+See `DEPLOYMENT.md` for the Cloudflare Pages, Sui Testnet, and secret preflight
+checklist.
+
 ## Next Integration Steps
 
-1. Replace mock invoice storage with Sui object reads.
-2. Replace simulated evidence with Walrus upload/download.
-3. Convert mock actions into Sui transaction builders.
-4. Add Move package constants and published package configuration.
+1. Publish the Move package to Sui Testnet.
+2. Add the package ID and shared `InvoiceCounter` ID to Cloudflare Pages env vars.
+3. Create and import a real `InvoiceReceivable` object for the demo path.
+4. Add a lightweight indexer or backend if the app needs automatic invoice discovery.

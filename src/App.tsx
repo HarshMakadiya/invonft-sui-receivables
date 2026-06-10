@@ -1,7 +1,6 @@
 import {
   useDAppKit,
   useCurrentAccount,
-  useCurrentClient,
   useCurrentNetwork,
   useCurrentWallet,
   useWalletConnection,
@@ -14,18 +13,17 @@ import {
   CircleDollarSign,
   Clock3,
   DatabaseZap,
+  ExternalLink,
   FileCheck2,
   FilePlus2,
   Gauge,
   Landmark,
   LayoutDashboard,
   LineChart,
-  LockKeyhole,
   Network,
   ReceiptText,
   Search,
   ShieldCheck,
-  Sparkles,
   Store,
   WalletCards,
   X,
@@ -33,22 +31,21 @@ import {
 import { FormEvent, useMemo, useState } from "react";
 import { starterInvoices, evidence, wallets } from "./data/mockReceivables";
 import { buildEvidencePackage } from "./lib/evidencePackage";
+import { isRealSuiId, isRealTransactionDigest, isRealWalrusBlobId, suiObjectUrl, suiTransactionUrl } from "./lib/explorer";
 import { formatCompactSui, formatSui, shortAddress } from "./lib/format";
 import { healthScore } from "./lib/healthScore";
 import { getReceivableContractReadiness } from "./lib/receivableContract";
-import { fetchInvoiceReceivableObject } from "./lib/receivableObjects";
 import {
   buildBuyReceivableTx,
   buildCreateReceivableTx,
   buildListForFinancingTx,
   buildPayInvoiceTx,
 } from "./lib/receivableTransactions";
-import { evidenceUrl, uploadEvidencePackage, walrusConfig } from "./lib/walrus";
+import { evidenceUrl, uploadEvidencePackage } from "./lib/walrus";
 import type { DemoWallet, FinancingStatus, Invoice, InvoiceStatus, Page, WalletRole } from "./types/receivable";
 
 function App() {
   const account = useCurrentAccount();
-  const suiClient = useCurrentClient();
   const dAppKit = useDAppKit();
   const [page, setPage] = useState<Page>("dashboard");
   const [walletRole, setWalletRole] = useState<WalletRole>("issuer");
@@ -57,7 +54,6 @@ function App() {
   const [query, setQuery] = useState("");
   const [toast, setToast] = useState("");
   const [isCreating, setIsCreating] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
 
   const selectedInvoice = invoices.find((invoice) => invoice.id === selectedInvoiceId) ?? invoices[0];
   const wallet = wallets[walletRole];
@@ -105,13 +101,13 @@ function App() {
       return result.Transaction.digest;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Transaction failed";
-      notify(`${label} stayed in demo mode: ${message}`);
+      notify(`${label} could not be submitted: ${message}`);
       return null;
     }
   }
 
   function hasRealObjectId(invoice: Invoice) {
-    return invoice.objectId.startsWith("0x") && !invoice.objectId.includes("...");
+    return isRealSuiId(invoice.objectId);
   }
 
   async function listInvoice(invoice: Invoice) {
@@ -206,7 +202,7 @@ function App() {
 
     let blobId = `mock_walrus_blob_${next}`;
     let blobObjectId: string | undefined;
-    let evidenceEvent = "Evidence package prepared locally";
+    let evidenceEvent = "Evidence package prepared";
 
     if (shouldUploadEvidence) {
       try {
@@ -217,7 +213,7 @@ function App() {
       } catch (error) {
         const message = error instanceof Error ? error.message : "Walrus upload failed";
         evidenceEvent = `Walrus upload skipped: ${message}`;
-        notify("Walrus upload failed; created local demo invoice.");
+        notify("Evidence upload failed; receivable was still prepared.");
       }
     }
 
@@ -255,7 +251,7 @@ function App() {
       events: [
         "Receivable object drafted",
         evidenceEvent,
-        createDigest ? `Create transaction submitted: ${shortAddress(createDigest)}` : "Create transaction pending contract configuration",
+        createDigest ? `Create transaction submitted: ${shortAddress(createDigest)}` : "Receivable prepared for review",
       ],
     };
 
@@ -264,24 +260,6 @@ function App() {
     setPage("dashboard");
     setIsCreating(false);
     notify(`${invoice.id} created`);
-  }
-
-  async function importInvoiceObject(objectId: string) {
-    setIsImporting(true);
-    try {
-      const importedInvoice = await fetchInvoiceReceivableObject(suiClient, objectId.trim());
-      setInvoices((current) => {
-        const withoutDuplicate = current.filter((invoice) => invoice.objectId !== importedInvoice.objectId);
-        return [importedInvoice, ...withoutDuplicate];
-      });
-      setSelectedInvoiceId(importedInvoice.id);
-      notify(`${importedInvoice.id} imported from Sui`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to import object";
-      notify(message);
-    } finally {
-      setIsImporting(false);
-    }
   }
 
   return (
@@ -333,33 +311,13 @@ function App() {
             <NavItem active={page === "portfolio"} icon={<WalletCards size={16} />} label="Buyer Portfolio" onClick={() => setPage("portfolio")} />
           </nav>
 
-          <div className="mt-5 rounded-[1.2rem] border border-line bg-paperalt/40 p-4">
-            <div className="flex items-center gap-2 text-moss font-serif">
-              <Sparkles size={14} />
-              <p className="text-xs font-bold">Deployment note</p>
-            </div>
-            <p className="mt-2 text-[11px] leading-5 text-inksecondary">
-              Cloudflare Pages for fast demo hosting. Walrus Sites can be added for a Sui-native static deployment.
-            </p>
-          </div>
-          <div className="mt-3 rounded-[1.2rem] border border-line bg-paperalt/20 p-4">
-            <div className="flex items-center gap-2 text-ink">
-              <ShieldCheck size={14} className="text-moss" />
-              <p className="text-xs font-bold">Contract config</p>
-            </div>
-            <p className="mt-2 text-[10px] leading-5 text-inkmuted font-mono">
-              {contractReadiness.ready
-                ? "Ready for transaction builders."
-                : `Waiting for ${contractReadiness.missing.length} env value${contractReadiness.missing.length === 1 ? "" : "s"}.`}
-            </p>
-          </div>
         </aside>
 
         <main className="min-w-0 flex-1">
           <header className="glass-card sticky top-4 z-20 mb-5 flex flex-col gap-4 rounded-[1.25rem] p-4 shadow-flat md:flex-row md:items-center md:justify-between border border-line bg-lead/90 backdrop-blur-md">
             <div>
               <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-moss/80 font-mono">
-                <Network size={12} /> Sui testnet workspace
+                <Network size={12} /> Receivables workspace
               </p>
               <h1 className="mt-1.5 text-balance text-2xl font-bold tracking-tight text-ink font-poppins">
                 Programmable receivables.
@@ -411,10 +369,8 @@ function App() {
               onList={listInvoice}
               onPay={payInvoice}
               onQuery={setQuery}
-              onImportObject={importInvoiceObject}
               onSelect={setSelectedInvoiceId}
               onShowMarketplace={() => setPage("marketplace")}
-              isImporting={isImporting}
             />
           )}
           {page === "create" && <CreateReceivable isCreating={isCreating} onCreate={createInvoice} />}
@@ -436,7 +392,6 @@ function App() {
 
 function Dashboard({
   invoices,
-  isImporting,
   query,
   selectedInvoice,
   stats,
@@ -445,12 +400,10 @@ function Dashboard({
   onList,
   onPay,
   onQuery,
-  onImportObject,
   onSelect,
   onShowMarketplace,
 }: {
   invoices: Invoice[];
-  isImporting: boolean;
   query: string;
   selectedInvoice: Invoice;
   stats: { pending: number; listed: number; financed: number; paid: number; volume: number };
@@ -459,7 +412,6 @@ function Dashboard({
   onList: (invoice: Invoice) => void;
   onPay: (invoice: Invoice) => void;
   onQuery: (value: string) => void;
-  onImportObject: (objectId: string) => void;
   onSelect: (id: string) => void;
   onShowMarketplace: () => void;
 }) {
@@ -503,13 +455,11 @@ function Dashboard({
           </div>
         </div>
 
-        <ImportObjectPanel isImporting={isImporting} onImportObject={onImportObject} />
-
         <div className="rounded-[1.25rem] border border-line bg-lead p-4 shadow-flat md:p-5">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
               <h2 className="text-lg font-bold tracking-tight text-ink font-poppins">Receivable pipeline</h2>
-              <p className="text-xs text-inksecondary font-sans">Search, inspect, and trigger live updates.</p>
+              <p className="text-xs text-inksecondary font-sans">Search, inspect, and manage receivable state updates.</p>
             </div>
             <label className="flex items-center gap-2 rounded-xl border border-line bg-paper px-3 py-1.5">
               <Search size={14} className="text-inkmuted" />
@@ -522,18 +472,26 @@ function Dashboard({
             </label>
           </div>
           <div className="mt-5 grid gap-2">
-            {invoices.map((invoice) => (
-              <InvoiceRow
-                key={invoice.id}
-                invoice={invoice}
-                selected={invoice.id === selectedInvoice.id}
-                walletRole={walletRole}
-                onBuy={onBuy}
-                onList={onList}
-                onPay={onPay}
-                onSelect={onSelect}
+            {invoices.length ? (
+              invoices.map((invoice) => (
+                <InvoiceRow
+                  key={invoice.id}
+                  invoice={invoice}
+                  selected={invoice.id === selectedInvoice.id}
+                  walletRole={walletRole}
+                  onBuy={onBuy}
+                  onList={onList}
+                  onPay={onPay}
+                  onSelect={onSelect}
+                />
+              ))
+            ) : (
+              <EmptyState
+                icon={<Search size={18} />}
+                title="No receivables match this search"
+                body="Clear the search or create a new receivable to continue the workflow."
               />
-            ))}
+            )}
           </div>
         </div>
       </section>
@@ -552,7 +510,7 @@ function PaymentRoute({ invoice }: { invoice: Invoice }) {
         <div className="ml-5.5 h-6 w-0.5 bg-line" />
         <RouteNode label={recipientIsBuyer ? "Payment recipient: buyer" : "Payment recipient: issuer"} value={shortAddress(invoice.paymentRecipient)} tone={recipientIsBuyer ? "aqua" : "sun"} />
         <div className="ml-5.5 h-6 w-0.5 bg-line" />
-        <RouteNode label="Payer triggers pay_invoice()" value={`${formatSui(invoice.amount)} settlement`} tone="coral" />
+        <RouteNode label="Payer completes settlement" value={`${formatSui(invoice.amount)} settlement`} tone="coral" />
       </div>
       <div className="mt-5 rounded-xl border border-moss/15 bg-mosssoft/40 p-3.5">
         <div className="flex items-center justify-between gap-3">
@@ -564,55 +522,6 @@ function PaymentRoute({ invoice }: { invoice: Invoice }) {
         </p>
       </div>
     </div>
-  );
-}
-
-function ImportObjectPanel({
-  isImporting,
-  onImportObject,
-}: {
-  isImporting: boolean;
-  onImportObject: (objectId: string) => void;
-}) {
-  const [objectId, setObjectId] = useState("");
-
-  function submitImport(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!objectId.trim()) {
-      return;
-    }
-    onImportObject(objectId);
-  }
-
-  return (
-    <form
-      className="rounded-[1.25rem] border border-line bg-lead p-4 shadow-flat md:p-5"
-      onSubmit={submitImport}
-    >
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-        <div>
-          <div className="flex items-center gap-2">
-            <DatabaseZap className="text-moss" size={18} />
-            <h2 className="text-lg font-bold tracking-tight text-ink font-poppins">Import Sui receivable</h2>
-          </div>
-          <p className="mt-1.5 text-xs leading-5 text-inksecondary font-sans">
-            Paste an `InvoiceReceivable` object ID after publishing the contract. Reads real Sui state from Testnet.
-          </p>
-          <input
-            className="mt-3.5 w-full rounded-xl border border-line bg-paper px-4 py-3 text-xs outline-none transition text-ink placeholder:text-inkmuted/80 focus:border-moss"
-            onChange={(event) => setObjectId(event.target.value)}
-            placeholder="0x..."
-            value={objectId}
-          />
-        </div>
-        <button
-          className="rounded-xl bg-moss px-5 py-3 text-xs font-bold text-lead shadow-flat hover:bg-mossdeep transition hover:-translate-y-0.5 disabled:bg-paperalt/50 disabled:text-inkmuted/40 disabled:border-line border disabled:cursor-not-allowed"
-          disabled={isImporting || !objectId.trim()}
-        >
-          {isImporting ? "Importing..." : "Import object"}
-        </button>
-      </div>
-    </form>
   );
 }
 
@@ -651,6 +560,9 @@ function InvoiceInspector({
   onPay: (invoice: Invoice) => void;
 }) {
   const health = healthScore(invoice);
+  const hasOnChainObject = isRealSuiId(invoice.objectId);
+  const hasTransactionDigest = isRealTransactionDigest(invoice.txDigest);
+  const hasWalrusBlob = isRealWalrusBlobId(invoice.blobId);
   return (
     <aside className="grid content-start gap-5">
       {/* Selected object & Health */}
@@ -752,14 +664,47 @@ function InvoiceInspector({
 
         <div className="mt-5 grid grid-cols-2 gap-2">
           <ActionButton invoice={invoice} walletRole={walletRole} onBuy={onBuy} onList={onList} onPay={onPay} />
-          <a
-            className="rounded-2xl border border-line bg-lead hover:bg-paperalt/45 text-ink px-4 py-3 text-center text-xs font-bold transition-all duration-150 shadow-flat"
-            href={evidenceUrl(invoice.blobId)}
-            rel="noreferrer"
-            target="_blank"
-          >
-            Inspect Evidence
-          </a>
+          <VerificationLink
+            disabled={!hasWalrusBlob}
+            href={hasWalrusBlob ? evidenceUrl(invoice.blobId) : undefined}
+            label="Inspect Evidence"
+          />
+        </div>
+      </div>
+
+      <div className="rounded-[1.25rem] border border-line bg-lead p-5 shadow-flat">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-bold text-ink font-poppins">Public verification</h3>
+            <p className="mt-1 text-xs leading-5 text-inksecondary font-sans">
+              {hasOnChainObject
+                ? "This receivable includes live IDs that can be checked outside the app."
+                : "This receivable has not been published on-chain yet."}
+            </p>
+          </div>
+          <span className={`rounded-full border px-2 py-1 text-[9px] font-black uppercase tracking-wider font-mono ${hasOnChainObject ? "border-moss/30 bg-mosssoft text-moss" : "border-line bg-paperalt/50 text-inkmuted"}`}>
+            {hasOnChainObject ? "On-chain" : "Demo"}
+          </span>
+        </div>
+        <div className="mt-4 grid gap-2">
+          <VerificationRow
+            disabled={!hasOnChainObject}
+            helper={hasOnChainObject ? shortAddress(invoice.objectId) : "No published object yet"}
+            href={hasOnChainObject ? suiObjectUrl(invoice.objectId) : undefined}
+            label="Sui object"
+          />
+          <VerificationRow
+            disabled={!hasTransactionDigest}
+            helper={hasTransactionDigest && invoice.txDigest ? shortAddress(invoice.txDigest) : "No submitted transaction yet"}
+            href={hasTransactionDigest && invoice.txDigest ? suiTransactionUrl(invoice.txDigest) : undefined}
+            label="Latest transaction"
+          />
+          <VerificationRow
+            disabled={!hasWalrusBlob}
+            helper={hasWalrusBlob ? shortAddress(invoice.blobId) : "Evidence package not published"}
+            href={hasWalrusBlob ? evidenceUrl(invoice.blobId) : undefined}
+            label="Walrus evidence"
+          />
         </div>
       </div>
 
@@ -789,6 +734,98 @@ function InvoiceInspector({
         </div>
       </div>
     </aside>
+  );
+}
+
+function VerificationLink({
+  disabled,
+  href,
+  label,
+}: {
+  disabled?: boolean;
+  href?: string;
+  label: string;
+}) {
+  if (disabled || !href) {
+    return (
+      <span className="rounded-2xl border border-line bg-paperalt/40 px-4 py-3 text-center text-xs font-bold text-inkmuted/70 shadow-flat">
+        {label}
+      </span>
+    );
+  }
+
+  return (
+    <a
+      className="inline-flex items-center justify-center gap-2 rounded-2xl border border-line bg-lead px-4 py-3 text-center text-xs font-bold text-ink shadow-flat transition-all duration-150 hover:bg-paperalt/45"
+      href={href}
+      rel="noreferrer"
+      target="_blank"
+    >
+      {label} <ExternalLink size={13} />
+    </a>
+  );
+}
+
+function VerificationRow({
+  disabled,
+  helper,
+  href,
+  label,
+}: {
+  disabled?: boolean;
+  helper: string;
+  href?: string;
+  label: string;
+}) {
+  const content = (
+    <>
+      <div>
+        <p className="text-xs font-bold text-ink font-sans">{label}</p>
+        <p className="mt-0.5 max-w-[220px] truncate text-[10px] text-inkmuted font-mono">{helper}</p>
+      </div>
+      <span className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${disabled ? "border-line bg-paperalt/50 text-inkmuted/50" : "border-moss/25 bg-mosssoft text-moss"}`}>
+        <ExternalLink size={13} />
+      </span>
+    </>
+  );
+
+  if (disabled || !href) {
+    return (
+      <div className="flex items-center justify-between gap-3 rounded-xl border border-line bg-paperalt/25 px-3 py-2.5 opacity-80">
+        {content}
+      </div>
+    );
+  }
+
+  return (
+    <a
+      className="flex items-center justify-between gap-3 rounded-xl border border-line bg-paperalt/30 px-3 py-2.5 transition-all duration-150 hover:border-moss/40 hover:bg-mosssoft/20"
+      href={href}
+      rel="noreferrer"
+      target="_blank"
+    >
+      {content}
+    </a>
+  );
+}
+
+function EmptyState({
+  body,
+  icon,
+  title,
+}: {
+  body: string;
+  icon: React.ReactNode;
+  title: string;
+}) {
+  return (
+    <div className="rounded-xl border border-dashed border-line bg-paperalt/10 p-8 text-center">
+      <div className="mx-auto grid h-10 w-10 place-items-center rounded-xl border border-line bg-lead text-moss shadow-flat">
+        {icon}
+      </div>
+      <p className="mt-3 text-sm font-bold text-ink font-poppins">{title}</p>
+      <p className="mx-auto mt-1.5 max-w-md text-xs leading-5 text-inksecondary font-sans">{body}</p>
+    </div>
   );
 }
 
@@ -931,9 +968,9 @@ function CreateReceivable({
           <label className="flex items-start gap-3 rounded-xl border border-line bg-paperalt/30 p-4 md:col-span-2">
             <input className="mt-1.5 h-4 w-4 accent-moss rounded border-line" name="uploadEvidence" type="checkbox" />
             <span>
-              <span className="block text-xs font-bold text-ink font-sans uppercase tracking-wider">Upload evidence JSON to Walrus Testnet</span>
+              <span className="block text-xs font-bold text-ink font-sans uppercase tracking-wider">Publish evidence package</span>
               <span className="mt-1 block text-xs leading-5 text-inksecondary">
-                Uses the public Testnet publisher. Leave off for a purely local demo invoice.
+                Creates a retrievable evidence record for buyer review. Leave off to prepare the receivable without upload.
               </span>
             </span>
           </label>
@@ -950,11 +987,19 @@ function CreateReceivable({
       <div className="grid content-start gap-5">
         <InfoPanel
           icon={<DatabaseZap />}
-          title="Walrus evidence package"
-          body={`Evidence JSON can now upload to ${walrusConfig.publisherUrl}. The object stores the returned blob ID for later retrieval.`}
+          title="Evidence first"
+          body="Capture payer details, line items, due date, and supporting records before the receivable is offered for financing."
         />
-        <InfoPanel icon={<ShieldCheck />} title="Required invariant" body="Once financed, payment_recipient changes to buyer. pay_invoice must always settle to payment_recipient." />
-        <InfoPanel icon={<LockKeyhole />} title="No secrets in frontend" body="Cloudflare and Walrus Sites both work for static frontend hosting, but privileged keys never belong in the client bundle." />
+        <InfoPanel
+          icon={<ShieldCheck />}
+          title="Automatic settlement"
+          body="If payment rights are sold, the final invoice payment follows the current rights holder without changing the payer experience."
+        />
+        <InfoPanel
+          icon={<Gauge />}
+          title="Buyer confidence"
+          body="The health score and verification checks help buyers compare receivables before they purchase payment rights."
+        />
       </div>
     </div>
   );
@@ -988,37 +1033,47 @@ function Marketplace({
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        {listings.map((invoice) => (
-          <div key={invoice.id} className="rounded-xl border border-line bg-paperalt/20 p-5 hover:border-moss/30 transition-all duration-150">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="font-bold text-ink font-mono text-sm">{invoice.id}</p>
-                <p className="mt-1 text-xs text-inksecondary">{invoice.clientName}</p>
+        {listings.length ? (
+          listings.map((invoice) => (
+            <div key={invoice.id} className="rounded-xl border border-line bg-paperalt/20 p-5 hover:border-moss/30 transition-all duration-150">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="font-bold text-ink font-mono text-sm">{invoice.id}</p>
+                  <p className="mt-1 text-xs text-inksecondary">{invoice.clientName}</p>
+                </div>
+                <FinancePill status={invoice.financingStatus} />
               </div>
-              <FinancePill status={invoice.financingStatus} />
+              <div className="mt-5 grid grid-cols-3 gap-2">
+                <SmallStat label="Face value" value={formatSui(invoice.amount)} />
+                <SmallStat label="Buy price" value={formatSui(invoice.financingPrice)} />
+                <SmallStat label="Discount" value={`${Math.round((1 - invoice.financingPrice / invoice.amount) * 100)}%`} />
+              </div>
+              <div className="mt-5 flex gap-2">
+                <button
+                  className="rounded-xl border border-line bg-lead hover:bg-paperalt/45 text-ink px-4 py-3 text-xs font-bold transition-all duration-150 shadow-flat"
+                  onClick={() => onSelect(invoice.id)}
+                >
+                  Inspect
+                </button>
+                <button
+                  disabled={walletRole !== "buyer"}
+                  className="rounded-xl bg-moss px-4 py-3 text-xs font-bold text-lead shadow-flat hover:bg-mossdeep transition hover:-translate-y-0.5 duration-150 disabled:bg-paperalt/50 disabled:text-inkmuted/40 disabled:border-line border"
+                  onClick={() => onBuy(invoice)}
+                >
+                  Buy payment rights
+                </button>
+              </div>
             </div>
-            <div className="mt-5 grid grid-cols-3 gap-2">
-              <SmallStat label="Face value" value={formatSui(invoice.amount)} />
-              <SmallStat label="Buy price" value={formatSui(invoice.financingPrice)} />
-              <SmallStat label="Discount" value={`${Math.round((1 - invoice.financingPrice / invoice.amount) * 100)}%`} />
-            </div>
-            <div className="mt-5 flex gap-2">
-              <button
-                className="rounded-xl border border-line bg-lead hover:bg-paperalt/45 text-ink px-4 py-3 text-xs font-bold transition-all duration-150 shadow-flat"
-                onClick={() => onSelect(invoice.id)}
-              >
-                Inspect
-              </button>
-              <button
-                disabled={walletRole !== "buyer"}
-                className="rounded-xl bg-moss px-4 py-3 text-xs font-bold text-lead shadow-flat hover:bg-mossdeep transition hover:-translate-y-0.5 duration-150 disabled:bg-paperalt/50 disabled:text-inkmuted/40 disabled:border-line border"
-                onClick={() => onBuy(invoice)}
-              >
-                Buy payment rights
-              </button>
-            </div>
+          ))
+        ) : (
+          <div className="lg:col-span-2">
+            <EmptyState
+              icon={<Store size={18} />}
+              title="No invoices listed yet"
+              body="Switch to Issuer, select a pending invoice, and use List rights to create a local marketplace listing."
+            />
           </div>
-        ))}
+        )}
       </div>
     </section>
   );
@@ -1053,9 +1108,11 @@ function Portfolio({ invoices, wallet }: { invoices: Invoice[]; wallet: DemoWall
               </div>
             ))
           ) : (
-            <div className="rounded-xl border border-dashed border-line bg-paperalt/10 p-8 text-center text-inkmuted/80 text-xs">
-              No receivables owned by this wallet yet.
-            </div>
+            <EmptyState
+              icon={<WalletCards size={18} />}
+              title="No buyer positions yet"
+              body="Switch to Buyer and purchase a listed receivable to see expected settlement positions here."
+            />
           )}
         </div>
       </div>
