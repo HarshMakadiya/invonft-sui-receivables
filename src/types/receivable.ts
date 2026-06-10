@@ -32,6 +32,8 @@ export type Invoice = {
   financingStatus: FinancingStatus;
   financingPrice: number;
   blobId: string;
+  blobObjectId?: string;
+  metadataChecksum?: string;
   evidence: Evidence;
   events: string[];
 };

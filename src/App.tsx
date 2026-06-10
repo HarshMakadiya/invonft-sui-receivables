@@ -30,9 +30,11 @@ import {
 } from "lucide-react";
 import { FormEvent, useMemo, useState } from "react";
 import { starterInvoices, evidence, wallets } from "./data/mockReceivables";
+import { buildEvidencePackage } from "./lib/evidencePackage";
 import { formatCompactSui, formatSui, shortAddress } from "./lib/format";
 import { healthScore } from "./lib/healthScore";
 import { getReceivableContractReadiness } from "./lib/receivableContract";
+import { evidenceUrl, uploadEvidencePackage, walrusConfig } from "./lib/walrus";
 import type { DemoWallet, FinancingStatus, Invoice, InvoiceStatus, Page, WalletRole } from "./types/receivable";
 
 function App() {
@@ -42,6 +44,7 @@ function App() {
   const [invoices, setInvoices] = useState<Invoice[]>(starterInvoices);
   const [query, setQuery] = useState("");
   const [toast, setToast] = useState("");
+  const [isCreating, setIsCreating] = useState(false);
 
   const selectedInvoice = invoices.find((invoice) => invoice.id === selectedInvoiceId) ?? invoices[0];
   const wallet = wallets[walletRole];
@@ -101,18 +104,56 @@ function App() {
     notify(`Funds routed to ${shortAddress(invoice.paymentRecipient)}`);
   }
 
-  function createInvoice(event: FormEvent<HTMLFormElement>) {
+  async function createInvoice(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const next = invoices.length + 1;
+    const id = `INV-${String(next).padStart(4, "0")}`;
+    const clientName = String(form.get("clientName"));
+    const clientEmail = String(form.get("clientEmail"));
+    const description = String(form.get("description"));
+    const amount = Number(form.get("amount"));
+    const dueDate = String(form.get("dueDate"));
+    const shouldUploadEvidence = form.get("uploadEvidence") === "on";
+
+    setIsCreating(true);
+
+    const evidencePackage = await buildEvidencePackage({
+      invoiceNumber: id,
+      clientName,
+      clientEmail,
+      description,
+      amountSui: amount,
+      dueDate,
+      payerWalletPresent: true,
+      pdfUploaded: false,
+    });
+
+    let blobId = `mock_walrus_blob_${next}`;
+    let blobObjectId: string | undefined;
+    let evidenceEvent = "Evidence package prepared locally";
+
+    if (shouldUploadEvidence) {
+      try {
+        const upload = await uploadEvidencePackage(evidencePackage);
+        blobId = upload.blobId;
+        blobObjectId = upload.blobObjectId;
+        evidenceEvent = "Evidence package uploaded to Walrus Testnet";
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Walrus upload failed";
+        evidenceEvent = `Walrus upload skipped: ${message}`;
+        notify("Walrus upload failed; created local demo invoice.");
+      }
+    }
+
     const invoice: Invoice = {
-      id: `INV-${String(next).padStart(4, "0")}`,
+      id,
       objectId: `0xmock...${next}`,
-      clientName: String(form.get("clientName")),
-      clientEmail: String(form.get("clientEmail")),
-      description: String(form.get("description")),
-      amount: Number(form.get("amount")),
-      dueDate: String(form.get("dueDate")),
+      clientName,
+      clientEmail,
+      description,
+      amount,
+      dueDate,
       issuer: wallets.issuer.address,
       payer: wallets.payer.address,
       paymentRecipient: wallets.issuer.address,
@@ -120,14 +161,17 @@ function App() {
       status: "PENDING",
       financingStatus: "NOT_LISTED",
       financingPrice: 0,
-      blobId: `mock_walrus_blob_${next}`,
+      blobId,
+      blobObjectId,
+      metadataChecksum: evidencePackage.metadataChecksum,
       evidence: evidence({ complete: true, unpaid: true }),
-      events: ["Receivable object drafted", "Evidence package prepared"],
+      events: ["Receivable object drafted", evidenceEvent],
     };
 
     setInvoices((current) => [invoice, ...current]);
     setSelectedInvoiceId(invoice.id);
     setPage("dashboard");
+    setIsCreating(false);
     notify(`${invoice.id} created`);
   }
 
@@ -246,7 +290,7 @@ function App() {
               onShowMarketplace={() => setPage("marketplace")}
             />
           )}
-          {page === "create" && <CreateReceivable onCreate={createInvoice} />}
+          {page === "create" && <CreateReceivable isCreating={isCreating} onCreate={createInvoice} />}
           {page === "marketplace" && (
             <Marketplace invoices={invoices} walletRole={walletRole} onBuy={buyInvoice} onSelect={setSelectedInvoiceId} />
           )}
@@ -453,13 +497,19 @@ function InvoiceInspector({
           <Fact label="Due date" value={invoice.dueDate} />
           <Fact label="Payment recipient" value={shortAddress(invoice.paymentRecipient)} />
           <Fact label="Walrus blob" value={invoice.blobId} />
+          <Fact label="Checksum" value={invoice.metadataChecksum ?? "Not generated"} />
         </div>
 
         <div className="mt-5 grid grid-cols-2 gap-2">
           <ActionButton invoice={invoice} walletRole={walletRole} onBuy={onBuy} onList={onList} onPay={onPay} />
-          <button className="rounded-2xl border border-line px-4 py-3 text-sm font-black transition hover:border-ink">
+          <a
+            className="rounded-2xl border border-line px-4 py-3 text-center text-sm font-black transition hover:border-ink"
+            href={evidenceUrl(invoice.blobId)}
+            rel="noreferrer"
+            target="_blank"
+          >
             Evidence
-          </button>
+          </a>
         </div>
       </div>
 
@@ -588,7 +638,13 @@ function ActionButton({
   );
 }
 
-function CreateReceivable({ onCreate }: { onCreate: (event: FormEvent<HTMLFormElement>) => void }) {
+function CreateReceivable({
+  isCreating,
+  onCreate,
+}: {
+  isCreating: boolean;
+  onCreate: (event: FormEvent<HTMLFormElement>) => void | Promise<void>;
+}) {
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
       <form className="rounded-[2rem] border border-line bg-white p-5 shadow-lifted md:p-7" onSubmit={onCreate}>
@@ -614,15 +670,31 @@ function CreateReceivable({ onCreate }: { onCreate: (event: FormEvent<HTMLFormEl
               required
             />
           </label>
+          <label className="flex items-start gap-3 rounded-2xl border border-line bg-paper p-4 md:col-span-2">
+            <input className="mt-1 h-4 w-4 accent-ink" name="uploadEvidence" type="checkbox" />
+            <span>
+              <span className="block text-sm font-black">Upload evidence JSON to Walrus Testnet</span>
+              <span className="mt-1 block text-sm leading-6 text-ink/55">
+                Uses the public Testnet publisher. Leave off for a purely local demo invoice.
+              </span>
+            </span>
+          </label>
         </div>
 
-        <button className="mt-6 rounded-2xl bg-ink px-6 py-4 text-sm font-black text-white transition hover:-translate-y-0.5 hover:bg-moss">
-          Prepare receivable
+        <button
+          className="mt-6 rounded-2xl bg-ink px-6 py-4 text-sm font-black text-white transition hover:-translate-y-0.5 hover:bg-moss disabled:bg-ink/35"
+          disabled={isCreating}
+        >
+          {isCreating ? "Preparing evidence..." : "Prepare receivable"}
         </button>
       </form>
 
       <div className="grid content-start gap-5">
-        <InfoPanel icon={<DatabaseZap />} title="Walrus evidence package" body="The current UI simulates upload, blob ID, and evidence retrieval. The next step wires this to the Walrus publisher and aggregator URLs." />
+        <InfoPanel
+          icon={<DatabaseZap />}
+          title="Walrus evidence package"
+          body={`Evidence JSON can now upload to ${walrusConfig.publisherUrl}. The object stores the returned blob ID for later retrieval.`}
+        />
         <InfoPanel icon={<ShieldCheck />} title="Required invariant" body="Once financed, payment_recipient changes to buyer. pay_invoice must always settle to payment_recipient." />
         <InfoPanel icon={<LockKeyhole />} title="No secrets in frontend" body="Cloudflare and Walrus Sites both work for static frontend hosting, but privileged keys never belong in the client bundle." />
       </div>

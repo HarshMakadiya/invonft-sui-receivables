@@ -23,6 +23,7 @@ export const starterInvoices: Invoice[] = [
     financingStatus: "FINANCED",
     financingPrice: 900,
     blobId: "walrus_blob_website_invoice",
+    metadataChecksum: "sha256:mock-website-invoice",
     evidence: evidence({ complete: true, unpaid: true }),
     events: [
       "Receivable object created",
@@ -47,6 +48,7 @@ export const starterInvoices: Invoice[] = [
     financingStatus: "LISTED",
     financingPrice: 585,
     blobId: "walrus_blob_brand_invoice",
+    metadataChecksum: "sha256:mock-brand-invoice",
     evidence: evidence({ complete: false, unpaid: true }),
     events: ["Receivable object created", "Evidence package uploaded", "Listed at 10% discount"],
   },
@@ -66,6 +68,7 @@ export const starterInvoices: Invoice[] = [
     financingStatus: "NOT_LISTED",
     financingPrice: 0,
     blobId: "walrus_blob_dashboard_invoice",
+    metadataChecksum: "sha256:mock-dashboard-invoice",
     evidence: evidence({ complete: true, unpaid: false }),
     events: ["Receivable object created", "Evidence package uploaded", "Invoice paid to issuer"],
   },

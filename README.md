@@ -43,11 +43,16 @@ Copy `.env.example` to `.env` after the Move package in `move/` is published:
 VITE_INVO_RECEIVABLE_PACKAGE_ID=0x...
 VITE_INVO_RECEIVABLE_MODULE=receivable
 VITE_INVO_INVOICE_COUNTER_ID=0x...
+VITE_WALRUS_PUBLISHER_URL=https://publisher.walrus-testnet.walrus.space
+VITE_WALRUS_AGGREGATOR_URL=https://aggregator.walrus-testnet.walrus.space
 ```
 
 The frontend already has transaction-builder placeholders for create, list, buy,
 pay, and cancel actions. They intentionally require these values before building
 real Move calls.
+
+Walrus URLs are public Testnet endpoints. They are not secrets. Mainnet should
+not use a public unauthenticated publisher.
 
 ## Move Package
 
@@ -61,6 +66,13 @@ sui client publish --gas-budget 100000000
 
 After publishing to Testnet, copy the package ID and shared `InvoiceCounter`
 object ID into `.env` and the same Cloudflare Pages environment variables.
+
+## Walrus Evidence
+
+The create flow can now build a deterministic evidence JSON package and compute
+a `sha256:` metadata checksum. The form has an optional checkbox to upload that
+JSON to the Walrus Testnet publisher. If the upload is disabled or fails, the UI
+falls back to a local mock blob ID so the demo remains usable.
 
 ## Deployment Direction
 
