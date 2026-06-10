@@ -3,8 +3,8 @@
 @tailwind utilities;
 
 :root {
-  color: #101312;
-  background: #f4f7f1;
+  color: #1A1A17;
+  background: #F7F4ED;
   font-synthesis: none;
   text-rendering: geometricPrecision;
   -webkit-font-smoothing: antialiased;
@@ -23,6 +23,7 @@ body {
   min-width: 320px;
   min-height: 100vh;
   margin: 0;
+  background-color: #F7F4ED;
 }
 
 button,
@@ -41,20 +42,28 @@ button:disabled {
 }
 
 ::selection {
-  background: #75f0b2;
-  color: #101312;
+  background: #E4EBE5;
+  color: #1F4634;
 }
 
 .grid-noise {
   background-image:
-    linear-gradient(rgba(16, 19, 18, 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(16, 19, 18, 0.045) 1px, transparent 1px);
+    linear-gradient(rgba(26, 26, 23, 0.012) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(26, 26, 23, 0.012) 1px, transparent 1px);
   background-size: 34px 34px;
 }
 
 .glass {
-  background: rgba(255, 255, 255, 0.74);
-  backdrop-filter: blur(18px);
+  background: rgba(255, 253, 247, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid #D9D3C4;
+}
+
+.glass-card {
+  background: #FFFDF7;
+  border: 1px solid #D9D3C4;
+  box-shadow: 0 4px 20px rgba(26, 26, 23, 0.03);
 }
 
 .text-balance {
@@ -68,4 +77,40 @@ button:disabled {
 .hide-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/* Custom visual alignment card (Verdacert accent line on hover) */
+.verdacert-card {
+  position: relative;
+  transition: border-color 0.22s, transform 0.22s;
+}
+.verdacert-card:hover {
+  border-color: #1F4634;
+}
+
+/* Document styling elements (Parchment paper ledger style) */
+.paper-doc {
+  background: #FFFDF7;
+  border: 1px solid #D9D3C4;
+  box-shadow: 0 12px 36px rgba(26, 26, 23, 0.05);
+}
+
+/* Soft trust indicators */
+@keyframes status-pulse {
+  0%, 100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.animate-pulse-glow {
+  animation: status-pulse 3.5s infinite ease-in-out;
+}
+
+/* Form input custom styling */
+input:focus, textarea:focus {
+  border-color: #1F4634 !important;
+  box-shadow: 0 0 0 3px rgba(31, 70, 52, 0.08) !important;
 }

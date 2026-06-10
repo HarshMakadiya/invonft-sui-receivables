@@ -285,61 +285,70 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-paper text-ink">
-      <div className="fixed inset-0 -z-10 grid-noise opacity-60" />
-      <div className="fixed left-[-18rem] top-[-18rem] -z-10 h-[38rem] w-[38rem] rounded-full bg-mint/25 blur-3xl" />
-      <div className="fixed bottom-[-20rem] right-[-12rem] -z-10 h-[36rem] w-[36rem] rounded-full bg-aqua/25 blur-3xl" />
+    <div className="min-h-screen bg-paper text-ink font-sans">
+      <div className="fixed inset-0 -z-10 grid-noise opacity-30" />
+      <div className="fixed left-[-18rem] top-[-18rem] -z-10 h-[38rem] w-[38rem] rounded-full bg-mosssoft/20 blur-[100px]" />
+      <div className="fixed bottom-[-20rem] right-[-12rem] -z-10 h-[36rem] w-[36rem] rounded-full bg-sun/10 blur-[100px]" />
 
       <div className="mx-auto flex min-h-screen w-full max-w-[1540px] gap-5 p-4 lg:p-5">
-        <aside className="hidden w-[286px] shrink-0 rounded-[2rem] bg-ink p-4 text-white shadow-lifted lg:block">
-          <div className="rounded-[1.55rem] border border-white/10 bg-white/[0.06] p-4">
+        <aside className="hidden w-[286px] shrink-0 rounded-[1.25rem] bg-lead border border-line p-4 text-ink shadow-flat lg:block">
+          <div className="rounded-[1.2rem] border border-line bg-paperalt/30 p-4">
             <div className="flex items-center gap-3">
-              <div className="grid h-12 w-12 place-items-center rounded-2xl bg-mint text-lg font-black text-ink shadow-glow">
+              <div className="grid h-12 w-12 place-items-center rounded-xl bg-moss text-lg font-black text-lead shadow-flat">
                 IN
               </div>
               <div>
-                <p className="text-lg font-black">InvoNFT</p>
-                <p className="text-xs text-white/55">Receivables console</p>
+                <p className="text-lg font-bold tracking-tight text-ink font-serif">InvoNFT</p>
+                <p className="text-[10px] text-inkmuted font-mono uppercase tracking-wider">Receivables console</p>
               </div>
             </div>
-            <div className="mt-5 rounded-2xl bg-white/[0.06] p-3">
-              <p className="text-xs uppercase tracking-[0.22em] text-white/45">Active role</p>
-              <select
-                className="mt-2 w-full rounded-xl border border-white/10 bg-ink px-3 py-2 text-sm text-white outline-none"
-                value={walletRole}
-                onChange={(event) => setWalletRole(event.target.value as WalletRole)}
-              >
-                {Object.entries(wallets).map(([key, item]) => (
-                  <option key={key} value={key}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
+            
+            <div className="mt-5 rounded-xl bg-paperalt/50 border border-line p-3">
+              <p className="text-[10px] uppercase tracking-[0.2em] text-inkmuted font-mono">Active role</p>
+              <div className="mt-2 grid gap-1">
+                {Object.entries(wallets).map(([key, item]) => {
+                  const isActive = walletRole === key;
+                  return (
+                    <button
+                      key={key}
+                      className={`w-full flex items-center justify-between rounded-lg px-3 py-2 text-xs font-bold transition-all duration-150 ${
+                        isActive
+                          ? "bg-moss text-lead shadow-flat font-bold"
+                          : "text-inksecondary bg-transparent hover:bg-paperalt/50 hover:text-ink"
+                      }`}
+                      onClick={() => setWalletRole(key as WalletRole)}
+                    >
+                      <span>{item.label}</span>
+                      {isActive && <Check size={12} />}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
-          <nav className="mt-5 grid gap-2">
-            <NavItem active={page === "dashboard"} icon={<LayoutDashboard size={18} />} label="Command Center" onClick={() => setPage("dashboard")} />
-            <NavItem active={page === "create"} icon={<FilePlus2 size={18} />} label="Create Receivable" onClick={() => setPage("create")} />
-            <NavItem active={page === "marketplace"} icon={<Store size={18} />} label="Marketplace" onClick={() => setPage("marketplace")} />
-            <NavItem active={page === "portfolio"} icon={<WalletCards size={18} />} label="Buyer Portfolio" onClick={() => setPage("portfolio")} />
+          <nav className="mt-5 grid gap-1">
+            <NavItem active={page === "dashboard"} icon={<LayoutDashboard size={16} />} label="Command Center" onClick={() => setPage("dashboard")} />
+            <NavItem active={page === "create"} icon={<FilePlus2 size={16} />} label="Create Receivable" onClick={() => setPage("create")} />
+            <NavItem active={page === "marketplace"} icon={<Store size={16} />} label="Marketplace" onClick={() => setPage("marketplace")} />
+            <NavItem active={page === "portfolio"} icon={<WalletCards size={16} />} label="Buyer Portfolio" onClick={() => setPage("portfolio")} />
           </nav>
 
-          <div className="mt-5 rounded-[1.6rem] border border-mint/30 bg-mint/10 p-4">
-            <div className="flex items-center gap-2 text-mint">
-              <Sparkles size={16} />
-              <p className="text-sm font-bold">Deployment note</p>
+          <div className="mt-5 rounded-[1.2rem] border border-line bg-paperalt/40 p-4">
+            <div className="flex items-center gap-2 text-moss font-serif">
+              <Sparkles size={14} />
+              <p className="text-xs font-bold">Deployment note</p>
             </div>
-            <p className="mt-2 text-sm leading-6 text-white/70">
+            <p className="mt-2 text-[11px] leading-5 text-inksecondary">
               Cloudflare Pages for fast demo hosting. Walrus Sites can be added for a Sui-native static deployment.
             </p>
           </div>
-          <div className="mt-3 rounded-[1.6rem] border border-white/10 bg-white/[0.06] p-4">
-            <div className="flex items-center gap-2 text-white">
-              <ShieldCheck size={16} />
-              <p className="text-sm font-bold">Contract config</p>
+          <div className="mt-3 rounded-[1.2rem] border border-line bg-paperalt/20 p-4">
+            <div className="flex items-center gap-2 text-ink">
+              <ShieldCheck size={14} className="text-moss" />
+              <p className="text-xs font-bold">Contract config</p>
             </div>
-            <p className="mt-2 text-sm leading-6 text-white/65">
+            <p className="mt-2 text-[10px] leading-5 text-inkmuted font-mono">
               {contractReadiness.ready
                 ? "Ready for transaction builders."
                 : `Waiting for ${contractReadiness.missing.length} env value${contractReadiness.missing.length === 1 ? "" : "s"}.`}
@@ -348,33 +357,42 @@ function App() {
         </aside>
 
         <main className="min-w-0 flex-1">
-          <header className="glass sticky top-4 z-20 mb-5 flex flex-col gap-4 rounded-[1.65rem] border border-white p-4 shadow-lifted md:flex-row md:items-center md:justify-between">
+          <header className="glass-card sticky top-4 z-20 mb-5 flex flex-col gap-4 rounded-[1.25rem] p-4 shadow-flat md:flex-row md:items-center md:justify-between border border-line bg-lead/90 backdrop-blur-md">
             <div>
-              <p className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-moss/55">
-                <Network size={14} /> Sui testnet workspace
+              <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-moss/80 font-mono">
+                <Network size={12} /> Sui testnet workspace
               </p>
-              <h1 className="mt-2 text-balance text-2xl font-black tracking-[-0.04em] md:text-4xl">
-                Programmable receivables, controlled from one console.
+              <h1 className="mt-1.5 text-balance text-2xl font-bold tracking-tight text-ink font-serif">
+                Programmable receivables.
               </h1>
             </div>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="flex flex-wrap items-center gap-3">
               <SuiWalletPanel />
-              <label className="rounded-2xl border border-line bg-white px-4 py-3">
-                <span className="block text-xs font-bold text-ink/45">Demo role</span>
-                <select
-                  className="mt-1 min-w-32 bg-transparent font-black outline-none"
-                  value={walletRole}
-                  onChange={(event) => setWalletRole(event.target.value as WalletRole)}
-                >
-                  {Object.entries(wallets).map(([key, item]) => (
-                    <option key={key} value={key}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              
+              <div className="rounded-2xl border border-line bg-paperalt/30 px-3.5 py-1.5 flex flex-col justify-center min-h-[52px]">
+                <span className="block text-[9px] font-bold text-inkmuted uppercase tracking-wider font-mono">Active Role</span>
+                <div className="mt-1 flex gap-1 bg-paperalt/50 rounded-lg p-0.5 border border-line">
+                  {Object.entries(wallets).map(([key, item]) => {
+                    const isActive = walletRole === key;
+                    return (
+                      <button
+                        key={key}
+                        className={`rounded-md px-2.5 py-0.5 text-[10px] font-bold font-mono transition-all duration-150 ${
+                          isActive
+                            ? "bg-moss text-lead shadow-flat font-bold"
+                            : "text-inksecondary hover:text-ink hover:bg-paperalt/40"
+                        }`}
+                        onClick={() => setWalletRole(key as WalletRole)}
+                      >
+                        {item.label.split(" ")[0]}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               <button
-                className="rounded-2xl bg-ink px-5 py-3 text-sm font-black text-white transition hover:-translate-y-0.5 hover:bg-moss"
+                className="rounded-2xl bg-moss px-5 py-3 text-xs font-bold text-lead shadow-flat hover:bg-mossdeep transition-all duration-200 hover:-translate-y-0.5"
                 onClick={() => setPage("create")}
               >
                 New receivable
@@ -450,34 +468,36 @@ function Dashboard({
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
       <section className="grid gap-5">
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
           <Metric accent="mint" icon={<ReceiptText />} label="Receivables" value={String(invoices.length)} />
           <Metric accent="aqua" icon={<Store />} label="Listed" value={String(stats.listed)} />
           <Metric accent="sun" icon={<Banknote />} label="Financed" value={String(stats.financed)} />
           <Metric accent="coral" icon={<LineChart />} label="Volume" value={formatCompactSui(stats.volume)} />
         </div>
 
-        <div className="overflow-hidden rounded-[2rem] border border-line bg-white shadow-lifted">
-          <div className="relative min-h-[360px] overflow-hidden bg-ink p-5 text-white md:p-7">
-            <div className="absolute inset-0 opacity-40 grid-noise" />
-            <div className="absolute right-[-8rem] top-[-10rem] h-80 w-80 rounded-full bg-mint/30 blur-3xl" />
-            <div className="absolute bottom-[-9rem] left-[-8rem] h-72 w-72 rounded-full bg-aqua/25 blur-3xl" />
-            <div className="relative z-10 grid gap-6 lg:grid-cols-[0.92fr_1.08fr]">
-              <div>
-                <p className="inline-flex rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-black uppercase tracking-[0.18em] text-mint">
-                  Live payment-right state
-                </p>
-                <h2 className="mt-5 max-w-xl text-balance text-4xl font-black tracking-[-0.06em] md:text-5xl">
-                  Route the final payment to whoever owns the rights.
-                </h2>
-                <p className="mt-5 max-w-lg text-base leading-7 text-white/68">
-                  The invoice is still simple for the payer. The Sui object decides whether funds go to the issuer or the buyer.
-                </p>
+        <div className="overflow-hidden rounded-[1.25rem] border border-line bg-lead shadow-flat">
+          <div className="relative min-h-[360px] overflow-hidden bg-paperalt p-5 text-ink md:p-7 border border-line rounded-[1.25rem]">
+            <div className="absolute inset-0 opacity-10 grid-noise" />
+            <div className="absolute right-[-8rem] top-[-10rem] h-80 w-80 rounded-full bg-mosssoft/40 blur-3xl" />
+            <div className="absolute bottom-[-9rem] left-[-8rem] h-72 w-72 rounded-full bg-sun/10 blur-3xl" />
+            <div className="relative z-10 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+              <div className="flex flex-col justify-between">
+                <div>
+                  <p className="inline-flex rounded-full border border-moss/25 bg-mosssoft px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-moss font-mono">
+                    Live payment-right state
+                  </p>
+                  <h2 className="mt-5 max-w-xl text-balance text-2xl md:text-3xl font-bold tracking-tight text-ink font-serif leading-tight">
+                    Smart payment routing to verified owners.
+                  </h2>
+                  <p className="mt-4 max-w-lg text-xs leading-5 text-inksecondary font-sans">
+                    The settlement interface remains simple. The Sui smart contract handles instant trustless routing: payer funds route directly to the active payment recipient.
+                  </p>
+                </div>
                 <button
-                  className="mt-7 inline-flex items-center gap-2 rounded-2xl bg-mint px-5 py-3 text-sm font-black text-ink transition hover:-translate-y-0.5"
+                  className="mt-6 self-start inline-flex items-center gap-2 rounded-xl bg-moss px-5 py-3.5 text-xs font-bold text-lead transition-all duration-150 hover:-translate-y-0.5 shadow-flat hover:bg-mossdeep"
                   onClick={onShowMarketplace}
                 >
-                  Review financeable invoices <ArrowRight size={16} />
+                  Review financeable invoices <ArrowRight size={14} />
                 </button>
               </div>
               <PaymentRoute invoice={selectedInvoice} />
@@ -487,23 +507,23 @@ function Dashboard({
 
         <ImportObjectPanel isImporting={isImporting} onImportObject={onImportObject} />
 
-        <div className="rounded-[2rem] border border-line bg-white p-4 shadow-lifted md:p-5">
+        <div className="rounded-[1.25rem] border border-line bg-lead p-4 shadow-flat md:p-5">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
-              <h2 className="text-2xl font-black tracking-[-0.03em]">Receivable pipeline</h2>
-              <p className="text-sm text-ink/55">Search, inspect, and trigger the core demo actions.</p>
+              <h2 className="text-lg font-bold tracking-tight text-ink font-serif">Receivable pipeline</h2>
+              <p className="text-xs text-inksecondary font-sans">Search, inspect, and trigger live updates.</p>
             </div>
-            <label className="flex items-center gap-2 rounded-2xl border border-line bg-paper px-3 py-2">
-              <Search size={16} className="text-ink/45" />
+            <label className="flex items-center gap-2 rounded-xl border border-line bg-paper px-3 py-1.5">
+              <Search size={14} className="text-inkmuted" />
               <input
-                className="w-full bg-transparent text-sm outline-none placeholder:text-ink/35 md:w-60"
+                className="w-full bg-transparent text-xs outline-none placeholder:text-inkmuted/80 text-ink md:w-60 font-sans"
                 value={query}
                 onChange={(event) => onQuery(event.target.value)}
-                placeholder="Search invoices"
+                placeholder="Search invoices by client or ID"
               />
             </label>
           </div>
-          <div className="mt-5 grid gap-3">
+          <div className="mt-5 grid gap-2">
             {invoices.map((invoice) => (
               <InvoiceRow
                 key={invoice.id}
@@ -528,21 +548,21 @@ function Dashboard({
 function PaymentRoute({ invoice }: { invoice: Invoice }) {
   const recipientIsBuyer = invoice.paymentRecipient === wallets.buyer.address;
   return (
-    <div className="rounded-[1.8rem] border border-white/15 bg-white/[0.08] p-4 backdrop-blur">
-      <div className="grid gap-3">
-        <RouteNode label="Issuer" value={shortAddress(invoice.issuer)} tone="mint" />
-        <div className="ml-5 h-8 w-px bg-white/20" />
+    <div className="rounded-2xl border border-line bg-paperalt/30 p-4 shadow-flat">
+      <div className="grid gap-2">
+        <RouteNode label="Issuer Wallet" value={shortAddress(invoice.issuer)} tone="mint" />
+        <div className="ml-5.5 h-6 w-0.5 bg-line" />
         <RouteNode label={recipientIsBuyer ? "Payment recipient: buyer" : "Payment recipient: issuer"} value={shortAddress(invoice.paymentRecipient)} tone={recipientIsBuyer ? "aqua" : "sun"} />
-        <div className="ml-5 h-8 w-px bg-white/20" />
-        <RouteNode label="Payer signs pay_invoice()" value={`${formatSui(invoice.amount)} settlement`} tone="coral" />
+        <div className="ml-5.5 h-6 w-0.5 bg-line" />
+        <RouteNode label="Payer triggers pay_invoice()" value={`${formatSui(invoice.amount)} settlement`} tone="coral" />
       </div>
-      <div className="mt-5 rounded-2xl border border-white/10 bg-black/20 p-4">
+      <div className="mt-5 rounded-xl border border-moss/15 bg-mosssoft/40 p-3.5">
         <div className="flex items-center justify-between gap-3">
-          <span className="text-sm text-white/55">Invariant</span>
-          <span className="rounded-full bg-mint px-3 py-1 text-xs font-black text-ink">PASS</span>
+          <span className="text-xs font-bold text-moss font-mono uppercase tracking-wider">Recipient Invariant</span>
+          <span className="rounded-full bg-mosssoft border border-moss/30 px-2 py-0.5 text-[9px] font-black text-moss font-mono">ENFORCED</span>
         </div>
-        <p className="mt-2 text-sm leading-6 text-white/75">
-          pay_invoice() routes to payment_recipient, never blindly to issuer.
+        <p className="mt-2 text-xs leading-5 text-inksecondary font-sans">
+          The smart contract routes funds dynamically to the recipient address. Payer does not hardcode issuer.
         </p>
       </div>
     </div>
@@ -568,27 +588,27 @@ function ImportObjectPanel({
 
   return (
     <form
-      className="rounded-[2rem] border border-line bg-white p-4 shadow-lifted md:p-5"
+      className="rounded-[1.25rem] border border-line bg-lead p-4 shadow-flat md:p-5"
       onSubmit={submitImport}
     >
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
         <div>
           <div className="flex items-center gap-2">
             <DatabaseZap className="text-moss" size={18} />
-            <h2 className="text-xl font-black tracking-[-0.03em]">Import Sui receivable</h2>
+            <h2 className="text-lg font-bold tracking-tight text-ink font-serif">Import Sui receivable</h2>
           </div>
-          <p className="mt-2 text-sm leading-6 text-ink/55">
-            Paste an `InvoiceReceivable` object ID after publishing the Move contract. This reads real Sui object JSON and adds it to the dashboard.
+          <p className="mt-1.5 text-xs leading-5 text-inksecondary font-sans">
+            Paste an `InvoiceReceivable` object ID after publishing the contract. Reads real Sui state from Testnet.
           </p>
           <input
-            className="mt-4 w-full rounded-2xl border border-line bg-paper px-4 py-3 text-sm outline-none transition placeholder:text-ink/35 focus:border-ink"
+            className="mt-3.5 w-full rounded-xl border border-line bg-paper px-4 py-3 text-xs outline-none transition text-ink placeholder:text-inkmuted/80 focus:border-moss"
             onChange={(event) => setObjectId(event.target.value)}
             placeholder="0x..."
             value={objectId}
           />
         </div>
         <button
-          className="rounded-2xl bg-ink px-5 py-3 text-sm font-black text-white transition hover:-translate-y-0.5 disabled:bg-ink/35"
+          className="rounded-xl bg-moss px-5 py-3 text-xs font-bold text-lead shadow-flat hover:bg-mossdeep transition hover:-translate-y-0.5 disabled:bg-paperalt/50 disabled:text-inkmuted/40 disabled:border-line border disabled:cursor-not-allowed"
           disabled={isImporting || !objectId.trim()}
         >
           {isImporting ? "Importing..." : "Import object"}
@@ -599,21 +619,21 @@ function ImportObjectPanel({
 }
 
 function RouteNode({ label, value, tone }: { label: string; value: string; tone: "mint" | "aqua" | "sun" | "coral" }) {
-  const color = {
-    mint: "bg-mint text-ink",
-    aqua: "bg-aqua text-ink",
-    sun: "bg-sun text-ink",
-    coral: "bg-coral text-white",
+  const style = {
+    mint: "bg-mosssoft text-moss border-moss/25 shadow-flat",
+    aqua: "bg-mosssoft/40 text-aqua border-aqua/25 shadow-flat",
+    sun: "bg-sun/10 text-sun border-sun/25 shadow-flat",
+    coral: "bg-coral/10 text-coral border-coral/25 shadow-flat",
   }[tone];
 
   return (
     <div className="flex items-center gap-3">
-      <div className={`grid h-11 w-11 place-items-center rounded-2xl ${color}`}>
-        <CircleDollarSign size={20} />
+      <div className={`grid h-11 w-11 place-items-center rounded-2xl border ${style}`}>
+        <CircleDollarSign size={18} />
       </div>
       <div>
-        <p className="text-sm font-black">{label}</p>
-        <p className="text-xs text-white/55">{value}</p>
+        <p className="text-xs font-bold text-ink font-sans">{label}</p>
+        <p className="text-[10px] text-inkmuted font-mono mt-0.5">{value}</p>
       </div>
     </div>
   );
@@ -635,72 +655,137 @@ function InvoiceInspector({
   const health = healthScore(invoice);
   return (
     <aside className="grid content-start gap-5">
-      <div className="rounded-[2rem] border border-line bg-white p-5 shadow-lifted">
+      {/* Selected object & Health */}
+      <div className="rounded-[1.25rem] border border-line bg-lead p-5 shadow-flat">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.2em] text-ink/40">Selected object</p>
-            <h2 className="mt-2 text-2xl font-black tracking-[-0.04em]">{invoice.id}</h2>
-            <p className="mt-1 text-sm text-ink/55">{invoice.clientName}</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-inkmuted font-mono">Selected Receivable</p>
+            <h2 className="mt-1.5 text-xl font-bold tracking-tight text-ink font-serif">{invoice.id}</h2>
+            <p className="mt-1 text-xs text-inksecondary">{invoice.clientName}</p>
           </div>
           <StatusPill status={invoice.status} />
         </div>
 
-        <div className="mt-5 rounded-3xl bg-paper p-4">
+        {/* Health score subcard */}
+        <div className="mt-5 rounded-xl bg-paperalt/40 border border-line p-4">
           <div className="flex items-end justify-between gap-3">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.18em] text-ink/40">Health score</p>
-              <p className="mt-1 text-5xl font-black tracking-[-0.07em]">{health.score}</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-inkmuted font-mono">Audit Score</p>
+              <p className="mt-1 text-3xl font-bold tracking-tight text-ink font-mono">
+                {health.score}
+                <span className="text-xs text-inkmuted">/100</span>
+              </p>
             </div>
-            <Gauge className="text-moss" size={42} />
+            <Gauge className="text-moss" size={32} />
           </div>
-          <div className="mt-4 h-3 overflow-hidden rounded-full bg-white">
-            <div className="h-full rounded-full bg-gradient-to-r from-mint to-aqua" style={{ width: `${health.score}%` }} />
+          <div className="mt-3.5 h-1.5 overflow-hidden rounded-full bg-paperalt border border-line">
+            <div
+              className="h-full bg-moss transition-all duration-350"
+              style={{ width: `${health.score}%` }}
+            />
           </div>
         </div>
 
-        <div className="mt-5 grid gap-3">
-          <Fact label="Amount" value={formatSui(invoice.amount)} />
-          <Fact label="Due date" value={invoice.dueDate} />
-          <Fact label="Payment recipient" value={shortAddress(invoice.paymentRecipient)} />
-          <Fact label="Walrus blob" value={invoice.blobId} />
-          <Fact label="Checksum" value={invoice.metadataChecksum ?? "Not generated"} />
-          <Fact label="Latest tx" value={invoice.txDigest ? shortAddress(invoice.txDigest) : "Demo only"} />
+        {/* Digital Document Section (Verdacert-style document preview) */}
+        <div className="mt-5 p-4 rounded-xl border border-line bg-lead shadow-inner font-mono text-[11px] text-inksecondary relative overflow-hidden">
+          <div className="absolute top-2 right-2 flex gap-1">
+            <span className="bg-mosssoft text-moss border border-moss/20 rounded px-1.5 py-0.5 text-[8px] font-bold tracking-wider uppercase font-mono">
+              Walrus Certified
+            </span>
+          </div>
+
+          <div className="border-b border-line pb-2 mb-3">
+            <p className="text-ink font-bold text-xs uppercase tracking-wide font-serif">Receivable Agreement</p>
+            <p className="text-inkmuted text-[9px] mt-0.5 font-mono truncate">Blob: {invoice.blobId}</p>
+          </div>
+
+          <div className="grid gap-2 text-[10px]">
+            <div className="flex justify-between border-b border-linesoft pb-1">
+              <span className="text-inkmuted font-mono">Object ID</span>
+              <span className="text-ink text-right max-w-[140px] truncate">{shortAddress(invoice.objectId)}</span>
+            </div>
+            <div className="flex justify-between border-b border-linesoft pb-1">
+              <span className="text-inkmuted font-mono">Amount</span>
+              <span className="text-moss font-bold font-mono">{formatSui(invoice.amount)}</span>
+            </div>
+            <div className="flex justify-between border-b border-linesoft pb-1">
+              <span className="text-inkmuted font-mono">Due Date</span>
+              <span className="text-ink font-mono">{invoice.dueDate}</span>
+            </div>
+            <div className="flex justify-between border-b border-linesoft pb-1">
+              <span className="text-inkmuted font-mono">Issuer</span>
+              <span className="text-ink max-w-[140px] truncate">{shortAddress(invoice.issuer)}</span>
+            </div>
+            <div className="flex justify-between border-b border-linesoft pb-1">
+              <span className="text-inkmuted font-mono">Recipient</span>
+              <span className="text-moss max-w-[140px] truncate font-bold font-mono">
+                {shortAddress(invoice.paymentRecipient)}
+              </span>
+            </div>
+          </div>
+
+          {/* Cryptographic Stamps */}
+          <div className="mt-4 pt-3 border-t border-line grid grid-cols-2 gap-2">
+            <div className="bg-paperalt/30 border border-line p-2 rounded-lg text-center relative overflow-hidden flex flex-col items-center justify-center min-h-[52px]">
+              <span className="text-[8px] uppercase tracking-wider text-inkmuted block">Issuer</span>
+              <span className="text-[10px] font-bold text-moss font-mono mt-1 flex items-center gap-1">
+                <Check size={10} /> SIGNED
+              </span>
+              <div className="absolute inset-0 border border-moss/10 rounded-lg opacity-40 transform scale-[0.9] pointer-events-none" />
+            </div>
+
+            <div className="bg-paperalt/30 border border-line p-2 rounded-lg text-center relative overflow-hidden flex flex-col items-center justify-center min-h-[52px]">
+              <span className="text-[8px] uppercase tracking-wider text-inkmuted block">Buyer</span>
+              {invoice.financingStatus === "FINANCED" ? (
+                <span className="text-[10px] font-bold text-aqua font-mono mt-1 flex items-center gap-1">
+                  <Check size={10} /> FINANCED
+                </span>
+              ) : (
+                <span className="text-[9px] font-bold text-inkmuted/60 font-mono mt-1">
+                  PENDING
+                </span>
+              )}
+              {invoice.financingStatus === "FINANCED" && (
+                <div className="absolute inset-0 border border-aqua/10 rounded-lg opacity-40 transform scale-[0.9] pointer-events-none" />
+              )}
+            </div>
+          </div>
         </div>
 
         <div className="mt-5 grid grid-cols-2 gap-2">
           <ActionButton invoice={invoice} walletRole={walletRole} onBuy={onBuy} onList={onList} onPay={onPay} />
           <a
-            className="rounded-2xl border border-line px-4 py-3 text-center text-sm font-black transition hover:border-ink"
+            className="rounded-2xl border border-line bg-lead hover:bg-paperalt/45 text-ink px-4 py-3 text-center text-xs font-bold transition-all duration-150 shadow-flat"
             href={evidenceUrl(invoice.blobId)}
             rel="noreferrer"
             target="_blank"
           >
-            Evidence
+            Inspect Evidence
           </a>
         </div>
       </div>
 
-      <div className="rounded-[2rem] border border-line bg-white p-5 shadow-lifted">
-        <h3 className="text-lg font-black">Verification checks</h3>
+      <div className="rounded-[1.25rem] border border-line bg-lead p-5 shadow-flat">
+        <h3 className="text-sm font-bold text-ink font-serif">Verification checks</h3>
         <div className="mt-4 grid gap-2">
           {health.checks.map((check) => (
-            <div key={check.label} className="flex items-center justify-between gap-3 rounded-2xl bg-paper px-3 py-2">
-              <span className="text-sm text-ink/65">{check.label}</span>
-              {check.passed ? <Check className="text-emerald-600" size={16} /> : <X className="text-coral" size={16} />}
+            <div key={check.label} className="flex items-center justify-between gap-3 rounded-xl bg-paperalt/30 border border-line px-3 py-2">
+              <span className="text-xs text-inksecondary font-sans">{check.label}</span>
+              {check.passed ? <Check className="text-moss" size={14} /> : <X className="text-coral" size={14} />}
             </div>
           ))}
         </div>
       </div>
 
-      <div className="rounded-[2rem] border border-line bg-white p-5 shadow-lifted">
-        <h3 className="text-lg font-black">Object activity</h3>
-        <div className="mt-4 grid gap-3">
+      <div className="rounded-[1.25rem] border border-line bg-lead p-5 shadow-flat">
+        <h3 className="text-sm font-bold text-ink font-serif">Object activity log</h3>
+        <div className="mt-4 grid gap-2">
           {invoice.events.map((event, index) => (
-            <div key={`${event}-${index}`} className="flex gap-3">
-              <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-ink text-xs font-black text-white">
-                {index + 1}
+            <div key={`${event}-${index}`} className="flex gap-3 items-start">
+              <div className="grid h-6 w-6 shrink-0 place-items-center rounded-lg bg-paperalt/60 text-[10px] font-mono font-bold text-moss border border-line">
+                {String(index + 1).padStart(2, "0")}
               </div>
-              <p className="pt-1 text-sm leading-6 text-ink/62">{event}</p>
+              <p className="pt-0.5 text-[11px] leading-5 text-inksecondary font-sans">{event}</p>
             </div>
           ))}
         </div>
@@ -729,22 +814,22 @@ function InvoiceRow({
   const health = healthScore(invoice);
   return (
     <article
-      className={`grid gap-4 rounded-[1.5rem] border p-4 transition md:grid-cols-[minmax(0,1fr)_auto] md:items-center ${
-        selected ? "border-ink bg-ink text-white" : "border-line bg-paper hover:border-moss"
+      className={`grid gap-4 rounded-xl border p-4 transition-all duration-150 md:grid-cols-[minmax(0,1fr)_auto] md:items-center ${
+        selected ? "border-moss bg-mosssoft/30 text-ink shadow-flat" : "border-line bg-lead hover:border-moss/40 hover:bg-lead"
       }`}
     >
       <button className="text-left" onClick={() => onSelect(invoice.id)}>
         <div className="flex flex-wrap items-center gap-2">
-          <p className="font-black">{invoice.id}</p>
+          <p className="font-bold text-sm font-mono">{invoice.id}</p>
           <StatusPill status={invoice.status} compact />
           <FinancePill status={invoice.financingStatus} />
         </div>
-        <p className={`mt-2 text-sm ${selected ? "text-white/62" : "text-ink/55"}`}>
+        <p className={`mt-2 text-xs font-sans ${selected ? "text-inksecondary" : "text-inksecondary/75"}`}>
           {invoice.clientName} · {invoice.description}
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           <MiniChip selected={selected}>{formatSui(invoice.amount)}</MiniChip>
-          <MiniChip selected={selected}>Health {health.score}/100</MiniChip>
+          <MiniChip selected={selected}>Audit {health.score}/100</MiniChip>
           <MiniChip selected={selected}>Recipient {shortAddress(invoice.paymentRecipient)}</MiniChip>
         </div>
       </button>
@@ -768,7 +853,7 @@ function ActionButton({
 }) {
   if (invoice.status !== "PENDING") {
     return (
-      <button disabled className="rounded-2xl bg-line px-4 py-3 text-sm font-black text-ink/45">
+      <button disabled className="rounded-xl bg-paperalt/40 border border-line px-4 py-3 text-xs font-bold text-inkmuted/50">
         Settled
       </button>
     );
@@ -776,7 +861,10 @@ function ActionButton({
 
   if (walletRole === "issuer" && invoice.financingStatus === "NOT_LISTED") {
     return (
-      <button className="rounded-2xl bg-ink px-4 py-3 text-sm font-black text-white transition hover:-translate-y-0.5" onClick={() => onList(invoice)}>
+      <button
+        className="rounded-xl bg-moss px-4 py-3 text-xs font-bold text-lead shadow-flat hover:bg-mossdeep transition hover:-translate-y-0.5 duration-150"
+        onClick={() => onList(invoice)}
+      >
         List rights
       </button>
     );
@@ -784,7 +872,10 @@ function ActionButton({
 
   if (walletRole === "buyer" && invoice.financingStatus === "LISTED") {
     return (
-      <button className="rounded-2xl bg-mint px-4 py-3 text-sm font-black text-ink transition hover:-translate-y-0.5" onClick={() => onBuy(invoice)}>
+      <button
+        className="rounded-xl bg-moss px-4 py-3 text-xs font-bold text-lead shadow-flat hover:bg-mossdeep transition hover:-translate-y-0.5 duration-150"
+        onClick={() => onBuy(invoice)}
+      >
         Buy rights
       </button>
     );
@@ -792,14 +883,17 @@ function ActionButton({
 
   if (walletRole === "payer") {
     return (
-      <button className="rounded-2xl bg-aqua px-4 py-3 text-sm font-black text-ink transition hover:-translate-y-0.5" onClick={() => onPay(invoice)}>
+      <button
+        className="rounded-xl bg-aqua px-4 py-3 text-xs font-bold text-lead shadow-flat hover:bg-moss transition hover:-translate-y-0.5 duration-150"
+        onClick={() => onPay(invoice)}
+      >
         Pay invoice
       </button>
     );
   }
 
   return (
-    <button disabled className="rounded-2xl bg-line px-4 py-3 text-sm font-black text-ink/45">
+    <button disabled className="rounded-xl bg-paperalt/40 border border-line px-4 py-3 text-xs font-bold text-inkmuted/50">
       No action
     </button>
   );
@@ -814,13 +908,13 @@ function CreateReceivable({
 }) {
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
-      <form className="rounded-[2rem] border border-line bg-white p-5 shadow-lifted md:p-7" onSubmit={onCreate}>
+      <form className="rounded-[1.25rem] border border-line bg-[#FFFDF7] p-5 shadow-flat md:p-7" onSubmit={onCreate}>
         <div className="mb-7 flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.2em] text-ink/40">Mint workflow</p>
-            <h2 className="mt-2 text-3xl font-black tracking-[-0.05em]">Create receivable object</h2>
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-inkmuted font-mono">Mint workflow</p>
+            <h2 className="mt-1.5 text-xl font-bold tracking-tight text-ink font-serif">Create receivable object</h2>
           </div>
-          <FileCheck2 className="text-moss" size={38} />
+          <FileCheck2 className="text-moss" size={32} />
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
@@ -829,19 +923,19 @@ function CreateReceivable({
           <Field label="Amount in SUI" name="amount" type="number" defaultValue="750" />
           <Field label="Due date" name="dueDate" type="date" defaultValue="2026-07-30" />
           <label className="grid gap-2 md:col-span-2">
-            <span className="text-sm font-black">Description</span>
+            <span className="text-xs font-bold text-ink font-sans uppercase tracking-wider">Description</span>
             <textarea
-              className="min-h-32 rounded-2xl border border-line bg-paper px-4 py-3 outline-none transition focus:border-ink"
+              className="min-h-32 rounded-xl border border-line bg-paper text-ink px-4 py-3 text-xs outline-none transition placeholder:text-inkmuted/60 focus:border-moss"
               name="description"
               defaultValue="Mobile app design sprint"
               required
             />
           </label>
-          <label className="flex items-start gap-3 rounded-2xl border border-line bg-paper p-4 md:col-span-2">
-            <input className="mt-1 h-4 w-4 accent-ink" name="uploadEvidence" type="checkbox" />
+          <label className="flex items-start gap-3 rounded-xl border border-line bg-paperalt/30 p-4 md:col-span-2">
+            <input className="mt-1.5 h-4 w-4 accent-moss rounded border-line" name="uploadEvidence" type="checkbox" />
             <span>
-              <span className="block text-sm font-black">Upload evidence JSON to Walrus Testnet</span>
-              <span className="mt-1 block text-sm leading-6 text-ink/55">
+              <span className="block text-xs font-bold text-ink font-sans uppercase tracking-wider">Upload evidence JSON to Walrus Testnet</span>
+              <span className="mt-1 block text-xs leading-5 text-inksecondary">
                 Uses the public Testnet publisher. Leave off for a purely local demo invoice.
               </span>
             </span>
@@ -849,7 +943,7 @@ function CreateReceivable({
         </div>
 
         <button
-          className="mt-6 rounded-2xl bg-ink px-6 py-4 text-sm font-black text-white transition hover:-translate-y-0.5 hover:bg-moss disabled:bg-ink/35"
+          className="mt-6 rounded-xl bg-moss px-6 py-4 text-xs font-bold text-lead shadow-flat hover:bg-mossdeep transition hover:-translate-y-0.5 duration-150 disabled:bg-paperalt/50 disabled:text-inkmuted/40 disabled:border-line border"
           disabled={isCreating}
         >
           {isCreating ? "Preparing evidence..." : "Prepare receivable"}
@@ -882,25 +976,27 @@ function Marketplace({
 }) {
   const listings = invoices.filter((invoice) => invoice.status === "PENDING" && invoice.financingStatus === "LISTED");
   return (
-    <section className="rounded-[2rem] border border-line bg-white p-5 shadow-lifted md:p-7">
+    <section className="rounded-[1.25rem] border border-line bg-[#FFFDF7] p-5 shadow-flat md:p-7">
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
-          <p className="text-xs font-black uppercase tracking-[0.2em] text-ink/40">Financeable supply</p>
-          <h2 className="mt-2 text-3xl font-black tracking-[-0.05em]">Marketplace</h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-ink/55">
+          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-inkmuted font-mono">Financeable supply</p>
+          <h2 className="mt-1.5 text-xl font-bold tracking-tight text-ink font-serif">Marketplace</h2>
+          <p className="mt-1.5 max-w-2xl text-xs leading-5 text-inksecondary">
             Listed invoices show the buyer discount, health score, and future payment recipient behavior before purchase.
           </p>
         </div>
-        <div className="rounded-2xl bg-paper px-4 py-3 text-sm font-black">{listings.length} listed invoices</div>
+        <div className="rounded-xl bg-paperalt/60 border border-line px-4 py-3 text-xs font-bold text-ink font-mono">
+          {listings.length} listed invoices
+        </div>
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         {listings.map((invoice) => (
-          <div key={invoice.id} className="rounded-[1.7rem] border border-line bg-paper p-5">
+          <div key={invoice.id} className="rounded-xl border border-line bg-paperalt/20 p-5 hover:border-moss/30 transition-all duration-150">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="font-black">{invoice.id}</p>
-                <p className="mt-1 text-sm text-ink/55">{invoice.clientName}</p>
+                <p className="font-bold text-ink font-mono text-sm">{invoice.id}</p>
+                <p className="mt-1 text-xs text-inksecondary">{invoice.clientName}</p>
               </div>
               <FinancePill status={invoice.financingStatus} />
             </div>
@@ -910,12 +1006,15 @@ function Marketplace({
               <SmallStat label="Discount" value={`${Math.round((1 - invoice.financingPrice / invoice.amount) * 100)}%`} />
             </div>
             <div className="mt-5 flex gap-2">
-              <button className="rounded-2xl border border-line bg-white px-4 py-3 text-sm font-black" onClick={() => onSelect(invoice.id)}>
+              <button
+                className="rounded-xl border border-line bg-lead hover:bg-paperalt/45 text-ink px-4 py-3 text-xs font-bold transition-all duration-150 shadow-flat"
+                onClick={() => onSelect(invoice.id)}
+              >
                 Inspect
               </button>
               <button
                 disabled={walletRole !== "buyer"}
-                className="rounded-2xl bg-mint px-4 py-3 text-sm font-black text-ink disabled:bg-line disabled:text-ink/45"
+                className="rounded-xl bg-moss px-4 py-3 text-xs font-bold text-lead shadow-flat hover:bg-mossdeep transition hover:-translate-y-0.5 duration-150 disabled:bg-paperalt/50 disabled:text-inkmuted/40 disabled:border-line border"
                 onClick={() => onBuy(invoice)}
               >
                 Buy payment rights
@@ -933,21 +1032,21 @@ function Portfolio({ invoices, wallet }: { invoices: Invoice[]; wallet: DemoWall
   const expectedSettlement = owned.filter((invoice) => invoice.status === "PENDING").reduce((sum, invoice) => sum + invoice.amount, 0);
   return (
     <section className="grid gap-5">
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-3">
         <Metric accent="mint" icon={<WalletCards />} label="Owned rights" value={String(owned.length)} />
         <Metric accent="aqua" icon={<Landmark />} label="Expected settlement" value={formatSui(expectedSettlement)} />
         <Metric accent="sun" icon={<Clock3 />} label="Current role" value={wallet.label} />
       </div>
-      <div className="rounded-[2rem] border border-line bg-white p-5 shadow-lifted md:p-7">
-        <h2 className="text-3xl font-black tracking-[-0.05em]">Buyer positions</h2>
-        <div className="mt-5 grid gap-3">
+      <div className="rounded-[1.25rem] border border-line bg-[#FFFDF7] p-5 shadow-flat md:p-7">
+        <h2 className="text-lg font-bold tracking-tight text-ink font-serif">Buyer positions</h2>
+        <div className="mt-5 grid gap-2">
           {owned.length ? (
             owned.map((invoice) => (
-              <div key={invoice.id} className="rounded-[1.5rem] border border-line bg-paper p-4">
+              <div key={invoice.id} className="rounded-xl border border-line bg-paperalt/20 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <p className="font-black">{invoice.id}</p>
-                    <p className="mt-1 text-sm text-ink/55">{invoice.clientName}</p>
+                    <p className="font-bold text-ink font-mono text-sm">{invoice.id}</p>
+                    <p className="mt-1 text-xs text-inksecondary">{invoice.clientName}</p>
                   </div>
                   <div className="flex gap-2">
                     <StatusPill status={invoice.status} />
@@ -957,7 +1056,7 @@ function Portfolio({ invoices, wallet }: { invoices: Invoice[]; wallet: DemoWall
               </div>
             ))
           ) : (
-            <div className="rounded-[1.5rem] border border-dashed border-line bg-paper p-8 text-center text-ink/55">
+            <div className="rounded-xl border border-dashed border-line bg-paperalt/10 p-8 text-center text-inkmuted/80 text-xs">
               No receivables owned by this wallet yet.
             </div>
           )}
@@ -970,8 +1069,8 @@ function Portfolio({ invoices, wallet }: { invoices: Invoice[]; wallet: DemoWall
 function NavItem({ active, icon, label, onClick }: { active: boolean; icon: React.ReactNode; label: string; onClick: () => void }) {
   return (
     <button
-      className={`flex items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-bold transition ${
-        active ? "bg-white text-ink" : "text-white/65 hover:bg-white/10 hover:text-white"
+      className={`flex items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-bold transition-all duration-200 ${
+        active ? "bg-mosssoft text-moss shadow-flat font-black" : "text-inksecondary hover:bg-paperalt/50 hover:text-ink"
       }`}
       onClick={onClick}
     >
@@ -988,20 +1087,20 @@ function SuiWalletPanel() {
   const connection = useWalletConnection();
 
   return (
-    <div className="rounded-2xl border border-line bg-white px-4 py-3">
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <span className="text-xs font-bold text-ink/45">Sui wallet</span>
-        <span className={`h-2 w-2 rounded-full ${connection.isConnected ? "bg-emerald-500" : "bg-ink/20"}`} />
+    <div className="rounded-2xl border border-line bg-paperalt/30 px-4 py-2 flex flex-col justify-center min-h-[52px]">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-[10px] font-bold text-inkmuted uppercase tracking-wider font-mono">Sui Network</span>
+        <span className={`h-1.5 w-1.5 rounded-full ${connection.isConnected ? "bg-moss animate-pulse" : "bg-inkmuted/30"}`} />
       </div>
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+      <div className="flex flex-col gap-2 mt-1 sm:flex-row sm:items-center">
         <ConnectButton />
         {account ? (
-          <div className="min-w-0 text-xs leading-5 text-ink/55">
+          <div className="min-w-0 text-[10px] leading-4 text-inkmuted font-mono">
             <p className="truncate font-black text-ink">{wallet?.name ?? "Connected"}</p>
             <p className="truncate">{shortAddress(account.address)} · {network}</p>
           </div>
         ) : (
-          <p className="max-w-44 text-xs leading-5 text-ink/50">Connect for real Sui transactions.</p>
+          <p className="max-w-44 text-[10px] leading-4 text-inkmuted/60 font-mono">Wallet offline</p>
         )}
       </div>
     </div>
@@ -1017,12 +1116,12 @@ function MobileNav({ page, onChange }: { page: Page; onChange: (page: Page) => v
   ];
 
   return (
-    <nav className="glass sticky top-[10.8rem] z-10 mb-5 flex gap-2 overflow-x-auto rounded-[1.25rem] border border-white p-2 shadow-lifted lg:hidden">
+    <nav className="glass-card sticky top-[10.8rem] z-10 mb-5 flex gap-2 overflow-x-auto rounded-[1.25rem] border border-line p-2 shadow-flat lg:hidden bg-lead/90 backdrop-blur-md">
       {items.map((item) => (
         <button
           key={item.page}
-          className={`flex min-w-max items-center gap-2 rounded-2xl px-3 py-2 text-sm font-black ${
-            page === item.page ? "bg-ink text-white" : "bg-white text-ink/62"
+          className={`flex min-w-max items-center gap-2 rounded-2xl px-3 py-2 text-sm font-bold transition-all duration-200 ${
+            page === item.page ? "bg-mosssoft text-moss shadow-flat font-black" : "text-inksecondary hover:bg-paperalt/50 hover:text-ink"
           }`}
           onClick={() => onChange(item.page)}
         >
@@ -1035,17 +1134,17 @@ function MobileNav({ page, onChange }: { page: Page; onChange: (page: Page) => v
 }
 
 function Metric({ accent, icon, label, value }: { accent: "mint" | "aqua" | "sun" | "coral"; icon: React.ReactNode; label: string; value: string }) {
-  const color = {
-    mint: "bg-mint",
-    aqua: "bg-aqua",
-    sun: "bg-sun",
-    coral: "bg-coral text-white",
+  const style = {
+    mint: "bg-mosssoft text-moss border-moss/25",
+    aqua: "bg-mosssoft/40 text-aqua border-aqua/25",
+    sun: "bg-sun/10 text-sun border-sun/25",
+    coral: "bg-coral/10 text-coral border-coral/25",
   }[accent];
   return (
-    <div className="rounded-[1.6rem] border border-line bg-white p-4 shadow-lifted">
-      <div className={`grid h-11 w-11 place-items-center rounded-2xl ${color}`}>{icon}</div>
-      <p className="mt-5 text-xs font-black uppercase tracking-[0.18em] text-ink/40">{label}</p>
-      <p className="mt-1 truncate text-2xl font-black tracking-[-0.04em]">{value}</p>
+    <div className="rounded-[1.6rem] border border-line bg-lead p-4 shadow-flat hover:border-moss/40 transition-all duration-300">
+      <div className={`grid h-11 w-11 place-items-center rounded-2xl border ${style}`}>{icon}</div>
+      <p className="mt-5 text-[10px] font-bold uppercase tracking-[0.18em] text-inkmuted font-mono">{label}</p>
+      <p className="mt-1 truncate text-2xl font-bold tracking-tight text-ink font-mono">{value}</p>
     </div>
   );
 }
@@ -1053,53 +1152,61 @@ function Metric({ accent, icon, label, value }: { accent: "mint" | "aqua" | "sun
 function Field({ label, name, defaultValue, type = "text" }: { label: string; name: string; defaultValue: string; type?: string }) {
   return (
     <label className="grid gap-2">
-      <span className="text-sm font-black">{label}</span>
-      <input className="rounded-2xl border border-line bg-paper px-4 py-3 outline-none transition focus:border-ink" name={name} type={type} defaultValue={defaultValue} required />
+      <span className="text-xs font-bold text-ink font-sans uppercase tracking-wider">{label}</span>
+      <input
+        className="rounded-xl border border-line bg-lead text-ink px-4 py-3 text-sm outline-none transition focus:border-moss focus:ring-1 focus:ring-moss/30 placeholder:text-inkmuted/80"
+        name={name}
+        type={type}
+        defaultValue={defaultValue}
+        required
+      />
     </label>
   );
 }
 
 function InfoPanel({ icon, title, body }: { icon: React.ReactNode; title: string; body: string }) {
   return (
-    <div className="rounded-[2rem] border border-line bg-white p-5 shadow-lifted">
-      <div className="grid h-12 w-12 place-items-center rounded-2xl bg-mint text-ink">{icon}</div>
-      <h3 className="mt-5 text-lg font-black">{title}</h3>
-      <p className="mt-2 text-sm leading-6 text-ink/58">{body}</p>
+    <div className="rounded-[2rem] border border-line bg-lead p-5 shadow-flat">
+      <div className="grid h-12 w-12 place-items-center rounded-2xl border border-moss/25 bg-mosssoft text-moss">{icon}</div>
+      <h3 className="mt-5 text-base font-bold text-ink font-serif">{title}</h3>
+      <p className="mt-2 text-xs leading-5 text-inksecondary">{body}</p>
     </div>
   );
 }
 
 function SmallStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl bg-white p-3">
-      <p className="text-xs font-black uppercase tracking-[0.16em] text-ink/35">{label}</p>
-      <p className="mt-1 truncate font-black">{value}</p>
+    <div className="rounded-xl bg-paperalt/40 border border-line p-3">
+      <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-inkmuted font-mono">{label}</p>
+      <p className="mt-1 truncate font-bold text-ink text-xs font-mono">{value}</p>
     </div>
   );
 }
 
 function StatusPill({ status, compact = false }: { status: InvoiceStatus; compact?: boolean }) {
-  const classes = {
-    PENDING: "bg-sun text-ink",
-    PAID: "bg-mint text-ink",
-    OVERDUE: "bg-coral text-white",
+  const style = {
+    PENDING: "bg-sun/10 text-sun border-sun/25 font-mono",
+    PAID: "bg-mosssoft text-moss border-moss/25 font-mono",
+    OVERDUE: "bg-coral/10 text-coral border-coral/20 font-mono",
   }[status];
-  return <span className={`rounded-full px-3 py-1 text-xs font-black ${classes}`}>{compact ? status.slice(0, 4) : status}</span>;
+  return <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold border ${style}`}>{compact ? status.slice(0, 4) : status}</span>;
 }
 
 function FinancePill({ status }: { status: FinancingStatus }) {
-  const classes = {
-    NOT_LISTED: "bg-white text-ink/55",
-    LISTED: "bg-aqua text-ink",
-    FINANCED: "bg-mint text-ink",
-    CANCELLED: "bg-coral text-white",
+  const style = {
+    NOT_LISTED: "bg-paperalt/60 text-inkmuted border-line font-mono",
+    LISTED: "bg-mosssoft/40 text-aqua border-aqua/25 font-mono",
+    FINANCED: "bg-mosssoft text-moss border-moss/25 font-mono",
+    CANCELLED: "bg-coral/10 text-coral border-coral/20 font-mono",
   }[status];
-  return <span className={`rounded-full px-3 py-1 text-xs font-black ${classes}`}>{status.replace("_", " ")}</span>;
+  return <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold border ${style}`}>{status.replace("_", " ")}</span>;
 }
 
 function MiniChip({ children, selected = false }: { children: React.ReactNode; selected?: boolean }) {
   return (
-    <span className={`rounded-full px-3 py-1 text-xs font-bold ${selected ? "bg-white/10 text-white/75" : "bg-white text-ink/58"}`}>
+    <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold border transition ${
+      selected ? "bg-mosssoft text-moss border-moss/20 font-mono" : "bg-paperalt/50 text-inksecondary border-line font-mono"
+    }`}>
       {children}
     </span>
   );
@@ -1108,8 +1215,8 @@ function MiniChip({ children, selected = false }: { children: React.ReactNode; s
 function Fact({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-4 border-b border-line pb-3 last:border-b-0 last:pb-0">
-      <span className="text-sm text-ink/48">{label}</span>
-      <span className="max-w-[190px] truncate text-right text-sm font-black">{value}</span>
+      <span className="text-xs text-inkmuted">{label}</span>
+      <span className="max-w-[190px] truncate text-right text-xs font-bold text-ink font-mono">{value}</span>
     </div>
   );
 }
