@@ -9,7 +9,8 @@ The app focuses on product workflow instead of pitch content:
 - Invoice detail and evidence health score
 - Financing marketplace
 - Buyer portfolio
-- Mock issuer, buyer, and payer roles
+- Sui dApp Kit wallet connection on Testnet
+- Mock issuer, buyer, and payer roles for demo flow simulation
 
 ## Local Development
 
@@ -44,6 +45,5 @@ no private environment secrets in the frontend bundle.
 
 1. Replace mock invoice storage with Sui object reads.
 2. Replace simulated evidence with Walrus upload/download.
-3. Replace mock wallet selector with Sui wallet connection.
-4. Convert mock actions into transaction builders.
-# invonft-sui-receivables
+3. Convert mock actions into Sui transaction builders.
+4. Add Move package constants and published package configuration.

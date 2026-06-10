@@ -1,4 +1,11 @@
 import {
+  useCurrentAccount,
+  useCurrentNetwork,
+  useCurrentWallet,
+  useWalletConnection,
+} from "@mysten/dapp-kit-react";
+import { ConnectButton } from "@mysten/dapp-kit-react/ui";
+import {
   ArrowRight,
   BadgeCheck,
   Banknote,
@@ -304,8 +311,9 @@ function App() {
               </h1>
             </div>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <SuiWalletPanel />
               <label className="rounded-2xl border border-line bg-white px-4 py-3">
-                <span className="block text-xs font-bold text-ink/45">Wallet</span>
+                <span className="block text-xs font-bold text-ink/45">Demo role</span>
                 <select
                   className="mt-1 min-w-32 bg-transparent font-black outline-none"
                   value={walletRole}
@@ -837,6 +845,33 @@ function NavItem({ active, icon, label, onClick }: { active: boolean; icon: Reac
       {icon}
       {label}
     </button>
+  );
+}
+
+function SuiWalletPanel() {
+  const account = useCurrentAccount();
+  const wallet = useCurrentWallet();
+  const network = useCurrentNetwork();
+  const connection = useWalletConnection();
+
+  return (
+    <div className="rounded-2xl border border-line bg-white px-4 py-3">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <span className="text-xs font-bold text-ink/45">Sui wallet</span>
+        <span className={`h-2 w-2 rounded-full ${connection.isConnected ? "bg-emerald-500" : "bg-ink/20"}`} />
+      </div>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <ConnectButton />
+        {account ? (
+          <div className="min-w-0 text-xs leading-5 text-ink/55">
+            <p className="truncate font-black text-ink">{wallet?.name ?? "Connected"}</p>
+            <p className="truncate">{shortAddress(account.address)} · {network}</p>
+          </div>
+        ) : (
+          <p className="max-w-44 text-xs leading-5 text-ink/50">Connect for real Sui transactions.</p>
+        )}
+      </div>
+    </div>
   );
 }
 
