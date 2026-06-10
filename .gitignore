@@ -13,6 +13,13 @@ node_modules/.tmp/
 .env
 .env.*
 !.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+*mnemonic*
+*secret*
 
 # Logs
 *.log
@@ -30,3 +37,15 @@ pnpm-debug.log*
 .cache/
 .parcel-cache/
 coverage/
+
+# Sui Move
+move/build/
+move/.coverage_map.mvcov
+
+# Sui local client / wallets
+.sui/
+sui_config/
+client.yaml
+keystore
+*.mv
+*.mvb

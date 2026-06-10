@@ -12,6 +12,9 @@ The app focuses on product workflow instead of pitch content:
 - Sui dApp Kit wallet connection on Testnet
 - Mock issuer, buyer, and payer roles for demo flow simulation
 
+The repo now also includes a Sui Move package under `move/` for the receivable
+object model and payment-right transfer logic.
+
 ## Local Development
 
 Install dependencies:
@@ -34,7 +37,7 @@ http://localhost:5173
 
 ## Sui Contract Configuration
 
-Copy `.env.example` to `.env` after the Move package is published:
+Copy `.env.example` to `.env` after the Move package in `move/` is published:
 
 ```bash
 VITE_INVO_RECEIVABLE_PACKAGE_ID=0x...
@@ -45,6 +48,19 @@ VITE_INVO_INVOICE_COUNTER_ID=0x...
 The frontend already has transaction-builder placeholders for create, list, buy,
 pay, and cancel actions. They intentionally require these values before building
 real Move calls.
+
+## Move Package
+
+The Move package lives in `move/`.
+
+```bash
+cd move
+sui move build
+sui client publish --gas-budget 100000000
+```
+
+After publishing to Testnet, copy the package ID and shared `InvoiceCounter`
+object ID into `.env` and the same Cloudflare Pages environment variables.
 
 ## Deployment Direction
 
