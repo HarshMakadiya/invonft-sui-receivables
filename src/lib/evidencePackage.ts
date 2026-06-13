@@ -16,6 +16,7 @@ export async function buildEvidencePackage(input: EvidencePackageInput): Promise
       },
     ],
     ...(input.invoicePdfBlobId ? { invoicePdfBlobId: input.invoicePdfBlobId } : {}),
+    ...(input.invoicePdfFileName ? { invoicePdfFileName: input.invoicePdfFileName } : {}),
     metadataChecksum: "",
     verificationChecks: {
       payerWalletPresent: input.payerWalletPresent,

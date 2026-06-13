@@ -292,6 +292,8 @@ function App() {
     const amount = Number(form.get("amount"));
     const dueDate = String(form.get("dueDate"));
     const shouldUploadEvidence = form.get("uploadEvidence") === "on";
+    const invoiceFile = form.get("invoiceFile");
+    const selectedInvoiceFile = invoiceFile instanceof File && invoiceFile.size > 0 ? invoiceFile : null;
     const issuerAddress = account?.address ?? wallets.issuer.address;
     const payerAddress = account?.address ?? wallets.payer.address;
 
@@ -303,24 +305,26 @@ function App() {
     let evidenceEvent = "Evidence package prepared";
 
     if (shouldUploadEvidence) {
-      const invoicePdf = createInvoicePdfBlob({
-        invoiceNumber: id,
-        clientName,
-        clientEmail,
-        description,
-        amount,
-        dueDate,
-        issuer: issuerAddress,
-        payer: payerAddress,
-      });
+      const invoicePdf =
+        selectedInvoiceFile ??
+        createInvoicePdfBlob({
+          invoiceNumber: id,
+          clientName,
+          clientEmail,
+          description,
+          amount,
+          dueDate,
+          issuer: issuerAddress,
+          payer: payerAddress,
+        });
 
       try {
         const upload = await uploadWalrusBlob(invoicePdf);
         invoicePdfBlobId = upload.blobId;
       } catch (error) {
-        const message = error instanceof Error ? error.message : "PDF upload failed";
-        evidenceEvent = `Invoice PDF upload skipped: ${message}`;
-        notify("Invoice PDF upload failed; trying evidence JSON next.");
+        const message = error instanceof Error ? error.message : "Invoice file upload failed";
+        evidenceEvent = `Invoice file upload skipped: ${message}`;
+        notify("Invoice file upload failed; trying evidence JSON next.");
       }
     }
 
@@ -334,6 +338,7 @@ function App() {
       payerWalletPresent: true,
       pdfUploaded: Boolean(invoicePdfBlobId),
       invoicePdfBlobId,
+      invoicePdfFileName: selectedInvoiceFile?.name,
     });
 
     if (shouldUploadEvidence) {
@@ -342,7 +347,7 @@ function App() {
         blobId = upload.blobId;
         blobObjectId = upload.blobObjectId;
         evidenceEvent = invoicePdfBlobId
-          ? "Invoice PDF and evidence package uploaded to Walrus Testnet"
+          ? `${selectedInvoiceFile ? "Invoice file" : "Invoice PDF"} and evidence package uploaded to Walrus Testnet`
           : "Evidence package uploaded to Walrus Testnet";
       } catch (error) {
         const message = error instanceof Error ? error.message : "Walrus upload failed";
@@ -920,6 +925,7 @@ function InvoiceInspector({
                 <EvidencePreviewRow label="Invoice" value={evidencePreview.invoiceNumber} />
                 <EvidencePreviewRow label="Client" value={evidencePreview.clientName} />
                 <EvidencePreviewRow label="Checksum" value={evidencePreview.metadataChecksum} />
+                <EvidencePreviewRow label="File" value={evidencePreview.invoicePdfFileName ?? "Generated PDF"} />
                 <EvidencePreviewRow label="PDF blob" value={evidencePreview.invoicePdfBlobId ?? "Not uploaded"} />
                 {evidencePreview.invoicePdfBlobId && (
                   <a
@@ -1246,6 +1252,18 @@ function CreateReceivable({
               <span className="mt-1 block text-xs leading-5 text-inksecondary">
                 Creates a retrievable evidence record for buyer review. Leave off to prepare the receivable without upload.
               </span>
+            </span>
+          </label>
+          <label className="grid gap-2 md:col-span-2">
+            <span className="text-xs font-bold text-ink font-sans uppercase tracking-wider">Invoice file</span>
+            <input
+              accept="application/pdf,image/png,image/jpeg"
+              className="rounded-xl border border-line bg-paper px-4 py-3 text-xs text-ink file:mr-4 file:rounded-lg file:border-0 file:bg-moss file:px-3 file:py-2 file:text-xs file:font-bold file:text-lead"
+              name="invoiceFile"
+              type="file"
+            />
+            <span className="text-[11px] leading-5 text-inksecondary">
+              Optional. If evidence publishing is enabled, this file is uploaded to Walrus and linked from the receivable evidence package.
             </span>
           </label>
         </div>

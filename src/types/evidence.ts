@@ -13,6 +13,7 @@ export type EvidencePackage = {
   currency: "SUI";
   lineItems: EvidenceLineItem[];
   invoicePdfBlobId?: string;
+  invoicePdfFileName?: string;
   metadataChecksum: string;
   purchaseOrderBlobId?: string;
   deliveryProofBlobId?: string;
@@ -37,4 +38,5 @@ export type EvidencePackageInput = {
   payerWalletPresent: boolean;
   pdfUploaded: boolean;
   invoicePdfBlobId?: string;
+  invoicePdfFileName?: string;
 };
