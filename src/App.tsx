@@ -1,6 +1,7 @@
 import {
   useDAppKit,
   useCurrentAccount,
+  useCurrentClient,
   useCurrentNetwork,
   useCurrentWallet,
   useWalletConnection,
@@ -28,37 +29,78 @@ import {
   WalletCards,
   X,
 } from "lucide-react";
-import { FormEvent, useMemo, useState } from "react";
-import { starterInvoices, evidence, wallets } from "./data/mockReceivables";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { evidence, wallets } from "./data/mockReceivables";
 import { buildEvidencePackage } from "./lib/evidencePackage";
 import { isRealSuiId, isRealTransactionDigest, isRealWalrusBlobId, suiObjectUrl, suiTransactionUrl } from "./lib/explorer";
 import { formatCompactSui, formatSui, shortAddress } from "./lib/format";
 import { healthScore } from "./lib/healthScore";
-import { getReceivableContractReadiness } from "./lib/receivableContract";
+import { createInvoicePdfBlob, downloadInvoicePdf } from "./lib/invoicePdf";
+import { getReceivableContractReadiness, receivableContract } from "./lib/receivableContract";
 import {
   buildBuyReceivableTx,
   buildCreateReceivableTx,
   buildListForFinancingTx,
+  buildMarkOverdueTx,
   buildPayInvoiceTx,
 } from "./lib/receivableTransactions";
-import { evidenceUrl, uploadEvidencePackage } from "./lib/walrus";
+import { fetchReceivablesFromDb, isSupabaseConfigured, saveReceivableToDb } from "./lib/supabaseReceivables";
+import { downloadEvidencePackage, evidenceUrl, uploadEvidencePackage, uploadWalrusBlob } from "./lib/walrus";
+import type { EvidencePackage } from "./types/evidence";
 import type { DemoWallet, FinancingStatus, Invoice, InvoiceStatus, Page, WalletRole } from "./types/receivable";
+
+function readInvoiceIdFromLocation() {
+  const match = window.location.pathname.match(/^\/invoice\/([^/]+)/);
+  return match ? decodeURIComponent(match[1]) : "";
+}
 
 function App() {
   const account = useCurrentAccount();
+  const suiClient = useCurrentClient();
   const dAppKit = useDAppKit();
   const [page, setPage] = useState<Page>("dashboard");
   const [walletRole, setWalletRole] = useState<WalletRole>("issuer");
-  const [selectedInvoiceId, setSelectedInvoiceId] = useState("INV-0001");
-  const [invoices, setInvoices] = useState<Invoice[]>(starterInvoices);
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState(readInvoiceIdFromLocation());
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [query, setQuery] = useState("");
   const [toast, setToast] = useState("");
   const [isCreating, setIsCreating] = useState(false);
 
-  const selectedInvoice = invoices.find((invoice) => invoice.id === selectedInvoiceId) ?? invoices[0];
+  const selectedInvoice = invoices.find((invoice) => invoice.id === selectedInvoiceId) ?? invoices[0] ?? null;
   const wallet = wallets[walletRole];
   const contractReadiness = getReceivableContractReadiness();
   const canSubmitTransactions = Boolean(account && contractReadiness.ready);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadReceivables() {
+      if (!isSupabaseConfigured()) {
+        return;
+      }
+
+      try {
+        const savedInvoices = await fetchReceivablesFromDb();
+        if (!isMounted || savedInvoices.length === 0) {
+          return;
+        }
+
+        const linkedInvoiceId = readInvoiceIdFromLocation();
+        const linkedInvoice = savedInvoices.find((invoice) => invoice.id === linkedInvoiceId);
+
+        setInvoices(savedInvoices);
+        setSelectedInvoiceId(linkedInvoice?.id ?? savedInvoices[0].id);
+      } catch (error) {
+        console.warn("Could not load receivables from Supabase", error);
+      }
+    }
+
+    void loadReceivables();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const stats = useMemo(() => {
     const pending = invoices.filter((invoice) => invoice.status === "PENDING").length;
@@ -79,11 +121,30 @@ function App() {
     window.setTimeout(() => setToast(""), 2600);
   }
 
-  function updateInvoice(id: string, update: (invoice: Invoice) => Invoice) {
-    setInvoices((current) => current.map((invoice) => (invoice.id === id ? update(invoice) : invoice)));
+  function selectInvoice(id: string) {
+    setSelectedInvoiceId(id);
+    window.history.replaceState(null, "", `/invoice/${encodeURIComponent(id)}`);
   }
 
-  async function trySubmitTransaction(label: string, buildTransaction: () => ReturnType<typeof buildCreateReceivableTx>) {
+  function updateInvoice(nextInvoice: Invoice) {
+    setInvoices((current) => current.map((invoice) => (invoice.id === nextInvoice.id ? nextInvoice : invoice)));
+    void syncReceivable(nextInvoice);
+  }
+
+  async function syncReceivable(invoice: Invoice) {
+    try {
+      await saveReceivableToDb(invoice);
+    } catch (error) {
+      console.warn("Could not sync receivable to Supabase", error);
+      notify("Database sync failed; the current browser session still has the update.");
+    }
+  }
+
+  async function trySubmitTransaction(
+    label: string,
+    buildTransaction: () => ReturnType<typeof buildCreateReceivableTx>,
+    createdObjectType?: string,
+  ) {
     if (!canSubmitTransactions) {
       return null;
     }
@@ -97,12 +158,37 @@ function App() {
         throw new Error(result.FailedTransaction.status.error?.message ?? "Transaction failed");
       }
 
-      notify(`${label} submitted: ${shortAddress(result.Transaction.digest)}`);
-      return result.Transaction.digest;
+      const digest = result.Transaction.digest;
+      const createdObjectId = createdObjectType ? await findCreatedObjectId(digest, createdObjectType) : undefined;
+
+      notify(`${label} submitted: ${shortAddress(digest)}`);
+      return { digest, createdObjectId };
     } catch (error) {
       const message = error instanceof Error ? error.message : "Transaction failed";
       notify(`${label} could not be submitted: ${message}`);
       return null;
+    }
+  }
+
+  async function findCreatedObjectId(digest: string, expectedType: string) {
+    try {
+      const result = await suiClient.waitForTransaction({
+        digest,
+        include: { effects: true, objectTypes: true },
+        timeout: 30_000,
+      });
+
+      if (result.FailedTransaction) {
+        throw new Error(result.FailedTransaction.status.error?.message ?? "Transaction failed");
+      }
+
+      const createdObjects = result.Transaction.effects.changedObjects.filter((object) => object.idOperation === "Created");
+      const createdInvoice = createdObjects.find((object) => result.Transaction.objectTypes[object.objectId] === expectedType);
+
+      return createdInvoice?.objectId;
+    } catch (error) {
+      console.warn("Could not resolve created Sui object", error);
+      return undefined;
     }
   }
 
@@ -121,17 +207,18 @@ function App() {
       )
       : null;
 
-    updateInvoice(invoice.id, (item) => ({
-      ...item,
+    updateInvoice({
+      ...invoice,
       financingStatus: "LISTED",
-      financingPrice: Math.floor(item.amount * 0.9),
-      txDigest: digest ?? item.txDigest,
-      events: [...item.events, digest ? `List transaction submitted: ${shortAddress(digest)}` : "Issuer listed payment rights for financing"],
-    }));
+      financingPrice: Math.floor(invoice.amount * 0.9),
+      txDigest: digest?.digest ?? invoice.txDigest,
+      events: [...invoice.events, digest ? `List transaction submitted: ${shortAddress(digest.digest)}` : "Issuer listed payment rights for financing"],
+    });
     notify(`${invoice.id} listed at 10% discount`);
   }
 
   async function buyInvoice(invoice: Invoice) {
+    const buyerAddress = account?.address ?? wallet.address;
     const digest = hasRealObjectId(invoice)
       ? await trySubmitTransaction("Buy transaction", () =>
         buildBuyReceivableTx({
@@ -141,15 +228,34 @@ function App() {
       )
       : null;
 
-    updateInvoice(invoice.id, (item) => ({
-      ...item,
+    updateInvoice({
+      ...invoice,
       financingStatus: "FINANCED",
-      paymentRecipient: wallet.address,
-      buyer: wallet.address,
-      txDigest: digest ?? item.txDigest,
-      events: [...item.events, digest ? `Buy transaction submitted: ${shortAddress(digest)}` : `Payment rights moved to ${wallet.label}`],
-    }));
+      paymentRecipient: buyerAddress,
+      buyer: buyerAddress,
+      txDigest: digest?.digest ?? invoice.txDigest,
+      events: [...invoice.events, digest ? `Buy transaction submitted: ${shortAddress(digest.digest)}` : `Payment rights moved to ${wallet.label}`],
+    });
     notify(`Payment recipient changed to ${wallet.label}`);
+  }
+
+  async function markInvoiceOverdue(invoice: Invoice) {
+    const digest = hasRealObjectId(invoice)
+      ? await trySubmitTransaction("Overdue transaction", () =>
+        buildMarkOverdueTx({
+          invoiceObjectId: invoice.objectId,
+        }),
+      )
+      : null;
+
+    updateInvoice({
+      ...invoice,
+      status: "OVERDUE",
+      evidence: { ...invoice.evidence, unpaid: true, dueDateValid: false },
+      txDigest: digest?.digest ?? invoice.txDigest,
+      events: [...invoice.events, digest ? `Overdue transaction submitted: ${shortAddress(digest.digest)}` : "Invoice marked overdue"],
+    });
+    notify(`${invoice.id} marked overdue`);
   }
 
   async function payInvoice(invoice: Invoice) {
@@ -162,16 +268,16 @@ function App() {
       )
       : null;
 
-    updateInvoice(invoice.id, (item) => ({
-      ...item,
+    updateInvoice({
+      ...invoice,
       status: "PAID",
-      evidence: { ...item.evidence, unpaid: false },
-      txDigest: digest ?? item.txDigest,
+      evidence: { ...invoice.evidence, unpaid: false },
+      txDigest: digest?.digest ?? invoice.txDigest,
       events: [
-        ...item.events,
-        digest ? `Pay transaction submitted: ${shortAddress(digest)}` : `Paid ${formatSui(item.amount)} to ${shortAddress(item.paymentRecipient)}`,
+        ...invoice.events,
+        digest ? `Pay transaction submitted: ${shortAddress(digest.digest)}` : `Paid ${formatSui(invoice.amount)} to ${shortAddress(invoice.paymentRecipient)}`,
       ],
-    }));
+    });
     notify(`Funds routed to ${shortAddress(invoice.paymentRecipient)}`);
   }
 
@@ -186,8 +292,37 @@ function App() {
     const amount = Number(form.get("amount"));
     const dueDate = String(form.get("dueDate"));
     const shouldUploadEvidence = form.get("uploadEvidence") === "on";
+    const issuerAddress = account?.address ?? wallets.issuer.address;
+    const payerAddress = account?.address ?? wallets.payer.address;
 
     setIsCreating(true);
+
+    let blobId = `mock_walrus_blob_${next}`;
+    let blobObjectId: string | undefined;
+    let invoicePdfBlobId: string | undefined;
+    let evidenceEvent = "Evidence package prepared";
+
+    if (shouldUploadEvidence) {
+      const invoicePdf = createInvoicePdfBlob({
+        invoiceNumber: id,
+        clientName,
+        clientEmail,
+        description,
+        amount,
+        dueDate,
+        issuer: issuerAddress,
+        payer: payerAddress,
+      });
+
+      try {
+        const upload = await uploadWalrusBlob(invoicePdf);
+        invoicePdfBlobId = upload.blobId;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "PDF upload failed";
+        evidenceEvent = `Invoice PDF upload skipped: ${message}`;
+        notify("Invoice PDF upload failed; trying evidence JSON next.");
+      }
+    }
 
     const evidencePackage = await buildEvidencePackage({
       invoiceNumber: id,
@@ -197,19 +332,18 @@ function App() {
       amountSui: amount,
       dueDate,
       payerWalletPresent: true,
-      pdfUploaded: false,
+      pdfUploaded: Boolean(invoicePdfBlobId),
+      invoicePdfBlobId,
     });
-
-    let blobId = `mock_walrus_blob_${next}`;
-    let blobObjectId: string | undefined;
-    let evidenceEvent = "Evidence package prepared";
 
     if (shouldUploadEvidence) {
       try {
         const upload = await uploadEvidencePackage(evidencePackage);
         blobId = upload.blobId;
         blobObjectId = upload.blobObjectId;
-        evidenceEvent = "Evidence package uploaded to Walrus Testnet";
+        evidenceEvent = invoicePdfBlobId
+          ? "Invoice PDF and evidence package uploaded to Walrus Testnet"
+          : "Evidence package uploaded to Walrus Testnet";
       } catch (error) {
         const message = error instanceof Error ? error.message : "Walrus upload failed";
         evidenceEvent = `Walrus upload skipped: ${message}`;
@@ -218,27 +352,31 @@ function App() {
     }
 
     const dueDateMs = new Date(dueDate).getTime();
-    const createDigest = await trySubmitTransaction("Create transaction", () =>
-      buildCreateReceivableTx({
-        payer: wallets.payer.address,
-        amountSui: amount,
-        dueDateMs,
-        blobId,
-        metadataChecksum: evidencePackage.metadataChecksum,
-      }),
+    const invoiceReceivableType = `${receivableContract.packageId}::${receivableContract.moduleName}::InvoiceReceivable`;
+    const createResult = await trySubmitTransaction(
+      "Create transaction",
+      () =>
+        buildCreateReceivableTx({
+          payer: payerAddress,
+          amountSui: amount,
+          dueDateMs,
+          blobId,
+          metadataChecksum: evidencePackage.metadataChecksum,
+        }),
+      invoiceReceivableType,
     );
 
     const invoice: Invoice = {
       id,
-      objectId: `0xmock...${next}`,
+      objectId: createResult?.createdObjectId ?? `db:${id}`,
       clientName,
       clientEmail,
       description,
       amount,
       dueDate,
-      issuer: wallets.issuer.address,
-      payer: wallets.payer.address,
-      paymentRecipient: wallets.issuer.address,
+      issuer: issuerAddress,
+      payer: payerAddress,
+      paymentRecipient: issuerAddress,
       buyer: null,
       status: "PENDING",
       financingStatus: "NOT_LISTED",
@@ -246,17 +384,18 @@ function App() {
       blobId,
       blobObjectId,
       metadataChecksum: evidencePackage.metadataChecksum,
-      txDigest: createDigest ?? undefined,
-      evidence: evidence({ complete: true, unpaid: true }),
+      txDigest: createResult?.digest ?? undefined,
+      evidence: evidence({ complete: Boolean(invoicePdfBlobId), unpaid: true }),
       events: [
         "Receivable object drafted",
         evidenceEvent,
-        createDigest ? `Create transaction submitted: ${shortAddress(createDigest)}` : "Receivable prepared for review",
+        createResult?.digest ? `Create transaction submitted: ${shortAddress(createResult.digest)}` : "Receivable prepared for review",
       ],
     };
 
     setInvoices((current) => [invoice, ...current]);
-    setSelectedInvoiceId(invoice.id);
+    void syncReceivable(invoice);
+    selectInvoice(invoice.id);
     setPage("dashboard");
     setIsCreating(false);
     notify(`${invoice.id} created`);
@@ -367,15 +506,17 @@ function App() {
               walletRole={walletRole}
               onBuy={buyInvoice}
               onList={listInvoice}
+              onMarkOverdue={markInvoiceOverdue}
               onPay={payInvoice}
+              onCreate={() => setPage("create")}
               onQuery={setQuery}
-              onSelect={setSelectedInvoiceId}
+              onSelect={selectInvoice}
               onShowMarketplace={() => setPage("marketplace")}
             />
           )}
           {page === "create" && <CreateReceivable isCreating={isCreating} onCreate={createInvoice} />}
           {page === "marketplace" && (
-            <Marketplace invoices={invoices} walletRole={walletRole} onBuy={buyInvoice} onSelect={setSelectedInvoiceId} />
+            <Marketplace invoices={invoices} walletRole={walletRole} onBuy={buyInvoice} onSelect={selectInvoice} />
           )}
           {page === "portfolio" && <Portfolio invoices={invoices} wallet={wallet} />}
         </main>
@@ -397,7 +538,9 @@ function Dashboard({
   stats,
   walletRole,
   onBuy,
+  onCreate,
   onList,
+  onMarkOverdue,
   onPay,
   onQuery,
   onSelect,
@@ -405,11 +548,13 @@ function Dashboard({
 }: {
   invoices: Invoice[];
   query: string;
-  selectedInvoice: Invoice;
+  selectedInvoice: Invoice | null;
   stats: { pending: number; listed: number; financed: number; paid: number; volume: number };
   walletRole: WalletRole;
   onBuy: (invoice: Invoice) => void;
+  onCreate: () => void;
   onList: (invoice: Invoice) => void;
+  onMarkOverdue: (invoice: Invoice) => void;
   onPay: (invoice: Invoice) => void;
   onQuery: (value: string) => void;
   onSelect: (id: string) => void;
@@ -450,7 +595,11 @@ function Dashboard({
                   Review financeable invoices <ArrowRight size={14} />
                 </button>
               </div>
-              <PaymentRoute invoice={selectedInvoice} />
+              {selectedInvoice ? (
+                <PaymentRoute invoice={selectedInvoice} />
+              ) : (
+                <EmptyRouteState onCreate={onCreate} />
+              )}
             </div>
           </div>
         </div>
@@ -477,7 +626,7 @@ function Dashboard({
                 <InvoiceRow
                   key={invoice.id}
                   invoice={invoice}
-                  selected={invoice.id === selectedInvoice.id}
+                  selected={invoice.id === selectedInvoice?.id}
                   walletRole={walletRole}
                   onBuy={onBuy}
                   onList={onList}
@@ -496,8 +645,48 @@ function Dashboard({
         </div>
       </section>
 
-      <InvoiceInspector invoice={selectedInvoice} walletRole={walletRole} onBuy={onBuy} onList={onList} onPay={onPay} />
+      {selectedInvoice ? (
+        <InvoiceInspector invoice={selectedInvoice} walletRole={walletRole} onBuy={onBuy} onList={onList} onMarkOverdue={onMarkOverdue} onPay={onPay} />
+      ) : (
+        <EmptyInspector />
+      )}
     </div>
+  );
+}
+
+function EmptyRouteState({ onCreate }: { onCreate: () => void }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-line bg-paperalt/30 p-5 shadow-flat">
+      <div className="grid h-12 w-12 place-items-center rounded-2xl border border-line bg-lead text-moss shadow-flat">
+        <DatabaseZap size={20} />
+      </div>
+      <h3 className="mt-5 text-sm font-bold text-ink font-poppins">No receivable selected</h3>
+      <p className="mt-2 text-xs leading-5 text-inksecondary">
+        Supabase has no receivable rows yet. Create the first receivable and it will appear here after refresh.
+      </p>
+      <button
+        className="mt-5 inline-flex items-center gap-2 rounded-xl bg-moss px-4 py-3 text-xs font-bold text-lead shadow-flat transition hover:-translate-y-0.5 hover:bg-mossdeep"
+        onClick={onCreate}
+      >
+        Create receivable <ArrowRight size={14} />
+      </button>
+    </div>
+  );
+}
+
+function EmptyInspector() {
+  return (
+    <aside className="grid content-start gap-5">
+      <div className="rounded-[1.25rem] border border-line bg-lead p-5 shadow-flat">
+        <div className="grid h-12 w-12 place-items-center rounded-2xl border border-line bg-paperalt/40 text-moss">
+          <ReceiptText size={20} />
+        </div>
+        <h3 className="mt-5 text-sm font-bold text-ink font-poppins">No database records</h3>
+        <p className="mt-2 text-xs leading-5 text-inksecondary">
+          Receivables are now loaded from Supabase only. Once a row exists, this panel will show Sui, Walrus, verification, and activity details.
+        </p>
+      </div>
+    </aside>
   );
 }
 
@@ -551,18 +740,43 @@ function InvoiceInspector({
   walletRole,
   onBuy,
   onList,
+  onMarkOverdue,
   onPay,
 }: {
   invoice: Invoice;
   walletRole: WalletRole;
   onBuy: (invoice: Invoice) => void;
   onList: (invoice: Invoice) => void;
+  onMarkOverdue: (invoice: Invoice) => void;
   onPay: (invoice: Invoice) => void;
 }) {
+  const [evidencePreview, setEvidencePreview] = useState<EvidencePackage | null>(null);
+  const [evidenceError, setEvidenceError] = useState("");
+  const [isLoadingEvidence, setIsLoadingEvidence] = useState(false);
   const health = healthScore(invoice);
   const hasOnChainObject = isRealSuiId(invoice.objectId);
   const hasTransactionDigest = isRealTransactionDigest(invoice.txDigest);
   const hasWalrusBlob = isRealWalrusBlobId(invoice.blobId);
+  const canMarkOverdue = invoice.status === "PENDING" && Boolean(invoice.dueDate) && new Date(invoice.dueDate).getTime() < Date.now();
+
+  async function loadEvidencePreview() {
+    if (!hasWalrusBlob) {
+      return;
+    }
+
+    setIsLoadingEvidence(true);
+    setEvidenceError("");
+
+    try {
+      const packageData = await downloadEvidencePackage(invoice.blobId);
+      setEvidencePreview(packageData);
+    } catch (error) {
+      setEvidenceError(error instanceof Error ? error.message : "Evidence could not be loaded");
+    } finally {
+      setIsLoadingEvidence(false);
+    }
+  }
+
   return (
     <aside className="grid content-start gap-5">
       {/* Selected object & Health */}
@@ -670,6 +884,57 @@ function InvoiceInspector({
             label="Inspect Evidence"
           />
         </div>
+
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <button
+            className="rounded-2xl border border-line bg-lead px-4 py-3 text-center text-xs font-bold text-ink shadow-flat transition-all duration-150 hover:bg-paperalt/45"
+            onClick={() => downloadInvoicePdf(invoice)}
+          >
+            Download PDF
+          </button>
+          <button
+            className="rounded-2xl border border-line bg-lead px-4 py-3 text-center text-xs font-bold text-ink shadow-flat transition-all duration-150 hover:bg-paperalt/45 disabled:text-inkmuted/50"
+            disabled={!hasWalrusBlob || isLoadingEvidence}
+            onClick={loadEvidencePreview}
+          >
+            {isLoadingEvidence ? "Loading..." : "View evidence"}
+          </button>
+        </div>
+
+        {canMarkOverdue && (
+          <button
+            className="mt-2 w-full rounded-2xl border border-coral/25 bg-coral/10 px-4 py-3 text-center text-xs font-bold text-coral shadow-flat transition-all duration-150 hover:bg-coral/15"
+            onClick={() => onMarkOverdue(invoice)}
+          >
+            Mark overdue
+          </button>
+        )}
+
+        {(evidencePreview || evidenceError) && (
+          <div className="mt-4 rounded-xl border border-line bg-paperalt/30 p-4">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-ink font-poppins">Walrus evidence preview</h3>
+            {evidenceError ? (
+              <p className="mt-2 text-xs leading-5 text-coral">{evidenceError}</p>
+            ) : evidencePreview ? (
+              <div className="mt-3 grid gap-2 text-[10px] text-inksecondary font-mono">
+                <EvidencePreviewRow label="Invoice" value={evidencePreview.invoiceNumber} />
+                <EvidencePreviewRow label="Client" value={evidencePreview.clientName} />
+                <EvidencePreviewRow label="Checksum" value={evidencePreview.metadataChecksum} />
+                <EvidencePreviewRow label="PDF blob" value={evidencePreview.invoicePdfBlobId ?? "Not uploaded"} />
+                {evidencePreview.invoicePdfBlobId && (
+                  <a
+                    className="mt-2 inline-flex items-center gap-2 text-xs font-bold text-moss"
+                    href={evidenceUrl(evidencePreview.invoicePdfBlobId)}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    Open invoice PDF blob <ExternalLink size={12} />
+                  </a>
+                )}
+              </div>
+            ) : null}
+          </div>
+        )}
       </div>
 
       <div className="rounded-[1.25rem] border border-line bg-lead p-5 shadow-flat">
@@ -806,6 +1071,15 @@ function VerificationRow({
     >
       {content}
     </a>
+  );
+}
+
+function EvidencePreviewRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between gap-3 border-b border-linesoft pb-1">
+      <span className="text-inkmuted">{label}</span>
+      <span className="max-w-[190px] truncate text-right text-ink">{value}</span>
+    </div>
   );
 }
 

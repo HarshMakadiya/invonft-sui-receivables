@@ -11,7 +11,9 @@ The app focuses on product workflow instead of pitch content:
 - Buyer portfolio
 - Sui dApp Kit wallet connection on Testnet
 - Public verification links for Sui objects, transaction digests, and Walrus blobs
-- Mock issuer, buyer, and payer roles for demo flow simulation
+- Supabase-backed receivable index so created invoices survive refresh
+- Shareable `/invoice/:id` URLs for payer/judge review
+- Demo issuer, buyer, and payer role controls for walking through the workflow
 
 The repo now also includes a Sui Move package under `move/` for the receivable
 object model and payment-right transfer logic.
@@ -46,6 +48,8 @@ VITE_INVO_RECEIVABLE_MODULE=receivable
 VITE_INVO_INVOICE_COUNTER_ID=0x...
 VITE_WALRUS_PUBLISHER_URL=https://publisher.walrus-testnet.walrus.space
 VITE_WALRUS_AGGREGATOR_URL=https://aggregator.walrus-testnet.walrus.space
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your_publishable_or_anon_key
 ```
 
 The frontend already has transaction-builder placeholders for create, list, buy,
@@ -57,11 +61,11 @@ not use a public unauthenticated publisher.
 
 The current action buttons run in hybrid mode:
 
-- Without a connected wallet and contract env vars, they update the local demo state.
+- Without a connected wallet and contract env vars, they update the Supabase-backed demo state.
 - With a connected wallet, package ID, and `InvoiceCounter` ID, create/list/buy/pay
   can submit Sui transactions through dApp Kit.
-- After publish, paste an `InvoiceReceivable` object ID into the dashboard import
-  panel to fetch real object JSON from Sui and add it to the console.
+- After create succeeds, the frontend waits for the transaction and stores the created
+  `InvoiceReceivable` object ID in Supabase.
 
 ## Move Package
 
@@ -78,10 +82,10 @@ object ID into `.env` and the same Cloudflare Pages environment variables.
 
 ## Walrus Evidence
 
-The create flow can now build a deterministic evidence JSON package and compute
-a `sha256:` metadata checksum. The form has an optional checkbox to upload that
-JSON to the Walrus Testnet publisher. If the upload is disabled or fails, the UI
-falls back to a local mock blob ID so the demo remains usable.
+The create flow builds a deterministic evidence JSON package, generates a simple
+invoice PDF, computes a `sha256:` metadata checksum, and can upload both the PDF
+and JSON package to the Walrus Testnet publisher. If upload is disabled or fails,
+the UI falls back to a local placeholder blob ID so the demo remains usable.
 
 ## Public Verification
 
@@ -92,13 +96,15 @@ configured aggregator endpoint. Mock IDs are shown but intentionally disabled.
 
 ## Local Demo Flow
 
-This flow does not require publishing the Move package:
+This flow works best after publishing the Move package and configuring Supabase:
 
-1. Start on the command center and inspect the selected receivable.
-2. Use the Issuer role to list payment rights.
-3. Switch to Buyer and buy the listed rights from the marketplace.
-4. Switch to Payer and pay the invoice.
-5. Confirm the payment recipient and activity log update through the full flow.
+1. Connect a Testnet wallet with SUI.
+2. Create a receivable and optionally publish evidence to Walrus.
+3. Confirm the Sui object ID, transaction digest, and Supabase row are present.
+4. Use the Issuer role to list payment rights.
+5. Switch to Buyer and buy the listed rights from the marketplace.
+6. Switch to Payer and pay the invoice using the configured payer wallet.
+7. Refresh and confirm the state reloads from Supabase.
 
 ## Deployment Direction
 
@@ -115,6 +121,6 @@ checklist.
 ## Next Integration Steps
 
 1. Publish the Move package to Sui Testnet.
-2. Add the package ID and shared `InvoiceCounter` ID to Cloudflare Pages env vars.
-3. Create and import a real `InvoiceReceivable` object for the demo path.
-4. Add a lightweight indexer or backend if the app needs automatic invoice discovery.
+2. Add the package ID, shared `InvoiceCounter` ID, and Supabase env vars to Cloudflare Pages.
+3. Run one live create -> list -> buy -> pay flow on Testnet.
+4. Add a production indexer/API if the app needs private search, notifications, or compliance workflows.

@@ -36,4 +36,5 @@ export type EvidencePackageInput = {
   dueDate: string;
   payerWalletPresent: boolean;
   pdfUploaded: boolean;
+  invoicePdfBlobId?: string;
 };

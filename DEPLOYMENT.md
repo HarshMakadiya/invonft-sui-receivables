@@ -14,6 +14,8 @@ Use this before pushing a demo build or sharing the Cloudflare Pages URL.
   - `VITE_INVO_INVOICE_COUNTER_ID`
   - `VITE_WALRUS_PUBLISHER_URL`
   - `VITE_WALRUS_AGGREGATOR_URL`
+  - `VITE_SUPABASE_URL`
+  - `VITE_SUPABASE_ANON_KEY`
 
 Only use public IDs and public endpoint URLs in `VITE_*` variables. Private keys,
 mnemonics, admin tokens, or publisher credentials must never be committed or put
@@ -38,8 +40,17 @@ in frontend environment variables.
 4. Copy the published package ID and shared `InvoiceCounter` object ID into
    `.env` locally and Cloudflare Pages environment variables.
 5. Create a receivable with a connected Testnet wallet.
-6. Import the created `InvoiceReceivable` object ID in the dashboard.
+6. Confirm the created `InvoiceReceivable` object ID is stored in Supabase.
 7. Confirm the Public verification card links to Suiscan and Walrus.
+
+## Supabase
+
+Create a `receivables` table with public read/write RLS policies for the demo
+index. Only use the publishable/anon key in frontend environments. Never use a
+`service_role` key in Cloudflare Pages or any `VITE_*` variable.
+
+After deploy, create a receivable, refresh the page, and confirm it reloads from
+Supabase instead of local state.
 
 ## Local Preflight
 

@@ -34,12 +34,16 @@ export type WalrusUploadResult = {
 };
 
 export async function uploadEvidencePackage(packageData: EvidencePackage): Promise<WalrusUploadResult> {
+  return uploadWalrusBlob(new Blob([canonicalJson(packageData)], { type: "application/json" }));
+}
+
+export async function uploadWalrusBlob(blob: Blob): Promise<WalrusUploadResult> {
   const response = await fetch(`${walrusConfig.publisherUrl}/v1/blobs?epochs=1`, {
     method: "PUT",
     headers: {
-      "Content-Type": "application/json",
+      "Content-Type": blob.type || "application/octet-stream",
     },
-    body: canonicalJson(packageData),
+    body: blob,
   });
 
   if (!response.ok) {

@@ -84,3 +84,12 @@ export function buildCancelListingTx(input: ObjectInput) {
   });
   return tx;
 }
+
+export function buildMarkOverdueTx(input: ObjectInput) {
+  const tx = new Transaction();
+  tx.moveCall({
+    target: getReceivableTarget("mark_overdue"),
+    arguments: [tx.object(input.invoiceObjectId), tx.object("0x6")],
+  });
+  return tx;
+}

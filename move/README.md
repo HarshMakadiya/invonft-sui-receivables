@@ -29,6 +29,16 @@ Install the Sui CLI, then run from this folder:
 sui move build
 ```
 
+## Test
+
+```bash
+sui move test
+```
+
+The tests cover the core demo invariants: financing updates the payment
+recipient, only the configured payer can pay, and paid invoices cannot be paid
+again.
+
 ## Publish To Testnet
 
 ```bash

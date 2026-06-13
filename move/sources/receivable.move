@@ -1,5 +1,5 @@
 module invonft::receivable {
-    use std::string::String;
+    use std::string::{Self, String};
     use sui::clock::{Self, Clock};
     use sui::coin::{Self, Coin};
     use sui::event;
@@ -11,6 +11,7 @@ module invonft::receivable {
     const STATUS_PENDING: u8 = 0;
     const STATUS_PAID: u8 = 1;
     const STATUS_OVERDUE: u8 = 2;
+    #[allow(unused_const)]
     const STATUS_DISPUTED: u8 = 3;
 
     const FINANCING_NOT_LISTED: u8 = 0;
@@ -27,6 +28,7 @@ module invonft::receivable {
     const E_INCORRECT_PAYMENT_AMOUNT: u64 = 6;
     const E_DUE_DATE_NOT_PASSED: u64 = 7;
     const E_EVIDENCE_LOCKED: u64 = 8;
+    const E_NOT_PAYER: u64 = 9;
 
     public struct InvoiceCounter has key {
         id: UID,
@@ -191,9 +193,10 @@ module invonft::receivable {
     public entry fun pay_invoice(
         invoice: &mut InvoiceReceivable,
         payment: Coin<SUI>,
-        _ctx: &mut TxContext,
+        ctx: &mut TxContext,
     ) {
-        assert!(invoice.status == STATUS_PENDING, E_ALREADY_PAID);
+        assert!(tx_context::sender(ctx) == invoice.payer, E_NOT_PAYER);
+        assert!(invoice.status == STATUS_PENDING || invoice.status == STATUS_OVERDUE, E_ALREADY_PAID);
         assert!(coin::value(&payment) == invoice.amount_mist, E_INCORRECT_PAYMENT_AMOUNT);
 
         let payment_recipient = invoice.payment_recipient;
@@ -264,5 +267,98 @@ module invonft::receivable {
 
     public fun amount_mist(invoice: &InvoiceReceivable): u64 {
         invoice.amount_mist
+    }
+
+    #[test_only]
+    fun invoice_for_testing(
+        issuer: address,
+        payer: address,
+        amount_mist: u64,
+        ctx: &mut TxContext,
+    ): InvoiceReceivable {
+        InvoiceReceivable {
+            id: object::new(ctx),
+            issuer,
+            payer,
+            payment_recipient: issuer,
+            amount_mist,
+            due_date_ms: 1000,
+            status: STATUS_PENDING,
+            financing_status: FINANCING_NOT_LISTED,
+            financing_price_mist: 0,
+            financing_discount_bps: 0,
+            created_at_ms: 0,
+            paid_at_ms: 0,
+            financed_at_ms: 0,
+            blob_id: string::utf8(b"blob"),
+            metadata_checksum: string::utf8(b"sha256:test"),
+            invoice_number: 1,
+        }
+    }
+
+    #[test_only]
+    fun destroy_for_testing(invoice: InvoiceReceivable) {
+        let InvoiceReceivable {
+            id,
+            issuer: _,
+            payer: _,
+            payment_recipient: _,
+            amount_mist: _,
+            due_date_ms: _,
+            status: _,
+            financing_status: _,
+            financing_price_mist: _,
+            financing_discount_bps: _,
+            created_at_ms: _,
+            paid_at_ms: _,
+            financed_at_ms: _,
+            blob_id: _,
+            metadata_checksum: _,
+            invoice_number: _,
+        } = invoice;
+        object::delete(id);
+    }
+
+    #[test]
+    fun financing_routes_payment_to_buyer() {
+        let mut ctx = tx_context::dummy();
+        let mut invoice = invoice_for_testing(@0x0, @0x0, 100, &mut ctx);
+        let financing_payment = coin::mint_for_testing<SUI>(90, &mut ctx);
+
+        list_for_financing(&mut invoice, 90, 1000, &mut ctx);
+        buy_receivable(&mut invoice, financing_payment, &mut ctx);
+
+        assert!(financing_status(&invoice) == FINANCING_FINANCED, 0);
+        assert!(payment_recipient(&invoice) == @0x0, 1);
+
+        let invoice_payment = coin::mint_for_testing<SUI>(100, &mut ctx);
+        pay_invoice(&mut invoice, invoice_payment, &mut ctx);
+
+        assert!(status(&invoice) == STATUS_PAID, 2);
+        destroy_for_testing(invoice);
+    }
+
+    #[test]
+    #[expected_failure(abort_code = E_NOT_PAYER)]
+    fun only_configured_payer_can_pay() {
+        let mut ctx = tx_context::dummy();
+        let mut invoice = invoice_for_testing(@0x0, @0x2, 100, &mut ctx);
+        let invoice_payment = coin::mint_for_testing<SUI>(100, &mut ctx);
+
+        pay_invoice(&mut invoice, invoice_payment, &mut ctx);
+        destroy_for_testing(invoice);
+    }
+
+    #[test]
+    #[expected_failure(abort_code = E_ALREADY_PAID)]
+    fun paid_invoice_cannot_be_paid_twice() {
+        let mut ctx = tx_context::dummy();
+        let mut invoice = invoice_for_testing(@0x0, @0x0, 100, &mut ctx);
+        let first_payment = coin::mint_for_testing<SUI>(100, &mut ctx);
+        let second_payment = coin::mint_for_testing<SUI>(100, &mut ctx);
+
+        pay_invoice(&mut invoice, first_payment, &mut ctx);
+        pay_invoice(&mut invoice, second_payment, &mut ctx);
+        destroy_for_testing(invoice);
     }
 }

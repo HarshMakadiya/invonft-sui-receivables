@@ -1,0 +1,178 @@
+import type { Evidence, FinancingStatus, Invoice, InvoiceStatus } from "../types/receivable";
+
+type ReceivableRow = {
+  id?: string;
+  invoice_id: string;
+  sui_object_id: string | null;
+  tx_digest: string | null;
+  blob_id: string | null;
+  issuer_wallet: string;
+  payer_wallet: string | null;
+  buyer_wallet: string | null;
+  client_name: string;
+  client_email: string | null;
+  description: string | null;
+  amount_sui: number;
+  due_date: string | null;
+  status: InvoiceStatus;
+  financing_status: FinancingStatus;
+  financing_price_sui: number;
+  metadata_checksum: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim() ?? "";
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim() ?? "";
+
+export function isSupabaseConfigured() {
+  return Boolean(supabaseUrl && supabaseAnonKey);
+}
+
+export async function fetchReceivablesFromDb() {
+  if (!isSupabaseConfigured()) {
+    return [];
+  }
+
+  const response = await fetch(`${restBaseUrl()}/receivables?select=*&order=created_at.desc`, {
+    headers: requestHeaders(),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Database read failed: ${response.status} ${response.statusText}`);
+  }
+
+  const rows = (await response.json()) as ReceivableRow[];
+  return rows.map(rowToInvoice);
+}
+
+export async function saveReceivableToDb(invoice: Invoice) {
+  if (!isSupabaseConfigured()) {
+    return null;
+  }
+
+  const row = invoiceToRow(invoice);
+  const updateFilter = row.sui_object_id
+    ? `sui_object_id=eq.${encodeURIComponent(row.sui_object_id)}`
+    : `invoice_id=eq.${encodeURIComponent(row.invoice_id)}`;
+
+  const updateResponse = await fetch(`${restBaseUrl()}/receivables?${updateFilter}`, {
+    method: "PATCH",
+    headers: requestHeaders("return=representation"),
+    body: JSON.stringify({
+      ...row,
+      updated_at: new Date().toISOString(),
+    }),
+  });
+
+  if (!updateResponse.ok) {
+    throw new Error(`Database update failed: ${updateResponse.status} ${updateResponse.statusText}`);
+  }
+
+  const updatedRows = (await updateResponse.json()) as ReceivableRow[];
+  if (updatedRows.length > 0) {
+    return rowToInvoice(updatedRows[0]);
+  }
+
+  const insertResponse = await fetch(`${restBaseUrl()}/receivables`, {
+    method: "POST",
+    headers: requestHeaders("return=representation"),
+    body: JSON.stringify(row),
+  });
+
+  if (!insertResponse.ok) {
+    throw new Error(`Database insert failed: ${insertResponse.status} ${insertResponse.statusText}`);
+  }
+
+  const insertedRows = (await insertResponse.json()) as ReceivableRow[];
+  return insertedRows[0] ? rowToInvoice(insertedRows[0]) : null;
+}
+
+function restBaseUrl() {
+  const normalized = supabaseUrl.replace(/\/+$/, "");
+  return normalized.endsWith("/rest/v1") ? normalized : `${normalized}/rest/v1`;
+}
+
+function requestHeaders(prefer?: string) {
+  return {
+    apikey: supabaseAnonKey,
+    Authorization: `Bearer ${supabaseAnonKey}`,
+    "Content-Type": "application/json",
+    ...(prefer ? { Prefer: prefer } : {}),
+  };
+}
+
+function invoiceToRow(invoice: Invoice): ReceivableRow {
+  return {
+    invoice_id: invoice.id,
+    sui_object_id: isPersistableObjectId(invoice.objectId) ? invoice.objectId : null,
+    tx_digest: invoice.txDigest ?? null,
+    blob_id: invoice.blobId || null,
+    issuer_wallet: invoice.issuer,
+    payer_wallet: invoice.payer || null,
+    buyer_wallet: invoice.buyer,
+    client_name: invoice.clientName,
+    client_email: invoice.clientEmail || null,
+    description: invoice.description || null,
+    amount_sui: invoice.amount,
+    due_date: invoice.dueDate || null,
+    status: invoice.status,
+    financing_status: invoice.financingStatus,
+    financing_price_sui: invoice.financingPrice,
+    metadata_checksum: invoice.metadataChecksum ?? null,
+  };
+}
+
+function rowToInvoice(row: ReceivableRow): Invoice {
+  const blobId = row.blob_id ?? "";
+  const payer = row.payer_wallet ?? "";
+  const status = normalizeStatus(row.status);
+  const financingStatus = normalizeFinancingStatus(row.financing_status);
+
+  return {
+    id: row.invoice_id,
+    objectId: row.sui_object_id ?? `db:${row.invoice_id}`,
+    clientName: row.client_name,
+    clientEmail: row.client_email ?? "",
+    description: row.description ?? "Receivable",
+    amount: Number(row.amount_sui),
+    dueDate: row.due_date ?? "",
+    issuer: row.issuer_wallet,
+    payer,
+    paymentRecipient: row.buyer_wallet ?? row.issuer_wallet,
+    buyer: row.buyer_wallet,
+    status,
+    financingStatus,
+    financingPrice: Number(row.financing_price_sui ?? 0),
+    blobId,
+    metadataChecksum: row.metadata_checksum ?? undefined,
+    txDigest: row.tx_digest ?? undefined,
+    evidence: evidenceFromRow(status, payer, blobId, row.due_date),
+    events: ["Loaded from Supabase index"],
+  };
+}
+
+function evidenceFromRow(status: InvoiceStatus, payer: string, blobId: string, dueDate: string | null): Evidence {
+  const hasEvidence = Boolean(blobId);
+  return {
+    invoicePdf: hasEvidence,
+    lineItemsMatch: true,
+    payerWalletPresent: Boolean(payer),
+    dueDateValid: dueDate ? new Date(dueDate).getTime() > Date.now() : false,
+    unpaid: status === "PENDING" || status === "OVERDUE",
+    evidenceComplete: hasEvidence,
+    walrusAvailable: hasEvidence,
+  };
+}
+
+function normalizeStatus(status: string): InvoiceStatus {
+  return status === "PAID" || status === "OVERDUE" ? status : "PENDING";
+}
+
+function normalizeFinancingStatus(status: string): FinancingStatus {
+  return status === "LISTED" || status === "FINANCED" || status === "CANCELLED" ? status : "NOT_LISTED";
+}
+
+function isPersistableObjectId(objectId: string) {
+  return /^0x[0-9a-fA-F]{64}$/.test(objectId);
+}
