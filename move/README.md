@@ -39,7 +39,7 @@ sui move test
 
 The tests cover the core demo invariants: financing updates the payment
 recipient, only the configured payer can pay, and paid invoices cannot be paid
-again.
+again. They also cover owner-controlled platform fee updates.
 
 ## Publish To Testnet
 
@@ -56,3 +56,27 @@ After publish, copy:
 - Shared `PlatformConfig` object ID -> `VITE_INVO_PLATFORM_CONFIG_ID`
 
 Use these in `.env` and Cloudflare Pages environment variables.
+
+## Platform Fee
+
+`PlatformConfig` stores:
+
+- `owner`: wallet allowed to update the fee config
+- `fee_recipient`: wallet that receives platform fees
+- `fee_bps`: fee in basis points
+
+The default fee is `100 bps`, which is 1%. `buy_receivable` splits that fee from
+the buyer's financing payment and transfers the remainder to the invoice issuer.
+`pay_invoice` does not charge a platform fee; it sends the final invoice amount
+to the current `payment_recipient`.
+
+Update the fee config from the owner wallet:
+
+```bash
+sui client call \
+  --package <PACKAGE_ID> \
+  --module receivable \
+  --function update_platform_fee \
+  --args <PLATFORM_CONFIG_ID> <FEE_RECIPIENT_WALLET> <FEE_BPS> \
+  --gas-budget 20000000
+```

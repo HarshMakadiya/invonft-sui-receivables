@@ -51,8 +51,72 @@ Create a `receivables` table with public read/write RLS policies for the demo
 index. Only use the publishable/anon key in frontend environments. Never use a
 `service_role` key in Cloudflare Pages or any `VITE_*` variable.
 
+Suggested demo table:
+
+```sql
+create table if not exists public.receivables (
+  id uuid primary key default gen_random_uuid(),
+  invoice_id text not null unique,
+  sui_object_id text unique,
+  tx_digest text,
+  blob_id text,
+  issuer_wallet text not null,
+  payer_wallet text,
+  buyer_wallet text,
+  client_name text not null,
+  client_email text,
+  description text,
+  amount_sui numeric not null default 0,
+  due_date date,
+  status text not null default 'PENDING',
+  financing_status text not null default 'NOT_LISTED',
+  financing_price_sui numeric not null default 0,
+  metadata_checksum text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.receivables enable row level security;
+
+create policy "demo read receivables"
+on public.receivables for select
+to anon
+using (true);
+
+create policy "demo insert receivables"
+on public.receivables for insert
+to anon
+with check (true);
+
+create policy "demo update receivables"
+on public.receivables for update
+to anon
+using (true)
+with check (true);
+```
+
 After deploy, create a receivable, refresh the page, and confirm it reloads from
 Supabase instead of local state.
+
+## Platform Fee Check
+
+The frontend needs `VITE_INVO_PLATFORM_CONFIG_ID` so financing purchases can pass
+the shared `PlatformConfig` object into `buy_receivable`.
+
+To update the fee recipient or percentage, run this from the package owner
+wallet:
+
+```bash
+sui client call \
+  --package <PACKAGE_ID> \
+  --module receivable \
+  --function update_platform_fee \
+  --args <PLATFORM_CONFIG_ID> <FEE_RECIPIENT_WALLET> <FEE_BPS> \
+  --gas-budget 20000000
+```
+
+`100` fee bps equals 1%. Fees are charged on receivable financing purchases, not
+on final invoice payment.
 
 ## Local Preflight
 
@@ -60,6 +124,7 @@ Run these before pushing:
 
 ```bash
 npm run build
+sui move test
 rg -n "(PRIVATE[_-]?KEY|MNEMONI[C]|SECRE[T]|API[_-]?KEY|TOKE[N]|PASSWOR[D]|sk-[A-Za-z0-9_-]+|ghp_[A-Za-z0-9_]+)" . --glob '!node_modules/**' --glob '!dist/**' --glob '!package-lock.json'
 ```
 
