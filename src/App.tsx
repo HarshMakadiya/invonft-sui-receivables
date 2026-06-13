@@ -196,8 +196,13 @@ function App() {
     return isRealSuiId(invoice.objectId);
   }
 
+  function shouldUseDemoFallback(invoice: Invoice) {
+    return !hasRealObjectId(invoice);
+  }
+
   async function listInvoice(invoice: Invoice) {
-    const digest = hasRealObjectId(invoice)
+    const isLiveInvoice = hasRealObjectId(invoice);
+    const digest = isLiveInvoice
       ? await trySubmitTransaction("List transaction", () =>
         buildListForFinancingTx({
           invoiceObjectId: invoice.objectId,
@@ -207,19 +212,32 @@ function App() {
       )
       : null;
 
+    if (isLiveInvoice && !digest) {
+      notify("List transaction failed; Supabase state was not changed.");
+      return;
+    }
+
     updateInvoice({
       ...invoice,
       financingStatus: "LISTED",
       financingPrice: Math.floor(invoice.amount * 0.9),
       txDigest: digest?.digest ?? invoice.txDigest,
-      events: [...invoice.events, digest ? `List transaction submitted: ${shortAddress(digest.digest)}` : "Issuer listed payment rights for financing"],
+      events: [
+        ...invoice.events,
+        digest
+          ? `List transaction submitted: ${shortAddress(digest.digest)}`
+          : shouldUseDemoFallback(invoice)
+            ? "Issuer listed payment rights for financing"
+            : "List transaction skipped",
+      ],
     });
     notify(`${invoice.id} listed at 10% discount`);
   }
 
   async function buyInvoice(invoice: Invoice) {
     const buyerAddress = account?.address ?? wallet.address;
-    const digest = hasRealObjectId(invoice)
+    const isLiveInvoice = hasRealObjectId(invoice);
+    const digest = isLiveInvoice
       ? await trySubmitTransaction("Buy transaction", () =>
         buildBuyReceivableTx({
           invoiceObjectId: invoice.objectId,
@@ -228,19 +246,32 @@ function App() {
       )
       : null;
 
+    if (isLiveInvoice && !digest) {
+      notify("Buy transaction failed; Supabase state was not changed.");
+      return;
+    }
+
     updateInvoice({
       ...invoice,
       financingStatus: "FINANCED",
       paymentRecipient: buyerAddress,
       buyer: buyerAddress,
       txDigest: digest?.digest ?? invoice.txDigest,
-      events: [...invoice.events, digest ? `Buy transaction submitted: ${shortAddress(digest.digest)}` : `Payment rights moved to ${wallet.label}`],
+      events: [
+        ...invoice.events,
+        digest
+          ? `Buy transaction submitted: ${shortAddress(digest.digest)}`
+          : shouldUseDemoFallback(invoice)
+            ? `Payment rights moved to ${wallet.label}`
+            : "Buy transaction skipped",
+      ],
     });
     notify(`Payment recipient changed to ${wallet.label}`);
   }
 
   async function markInvoiceOverdue(invoice: Invoice) {
-    const digest = hasRealObjectId(invoice)
+    const isLiveInvoice = hasRealObjectId(invoice);
+    const digest = isLiveInvoice
       ? await trySubmitTransaction("Overdue transaction", () =>
         buildMarkOverdueTx({
           invoiceObjectId: invoice.objectId,
@@ -248,18 +279,31 @@ function App() {
       )
       : null;
 
+    if (isLiveInvoice && !digest) {
+      notify("Overdue transaction failed; Supabase state was not changed.");
+      return;
+    }
+
     updateInvoice({
       ...invoice,
       status: "OVERDUE",
       evidence: { ...invoice.evidence, unpaid: true, dueDateValid: false },
       txDigest: digest?.digest ?? invoice.txDigest,
-      events: [...invoice.events, digest ? `Overdue transaction submitted: ${shortAddress(digest.digest)}` : "Invoice marked overdue"],
+      events: [
+        ...invoice.events,
+        digest
+          ? `Overdue transaction submitted: ${shortAddress(digest.digest)}`
+          : shouldUseDemoFallback(invoice)
+            ? "Invoice marked overdue"
+            : "Overdue transaction skipped",
+      ],
     });
     notify(`${invoice.id} marked overdue`);
   }
 
   async function payInvoice(invoice: Invoice) {
-    const digest = hasRealObjectId(invoice)
+    const isLiveInvoice = hasRealObjectId(invoice);
+    const digest = isLiveInvoice
       ? await trySubmitTransaction("Pay transaction", () =>
         buildPayInvoiceTx({
           invoiceObjectId: invoice.objectId,
@@ -268,6 +312,11 @@ function App() {
       )
       : null;
 
+    if (isLiveInvoice && !digest) {
+      notify("Pay transaction failed; Supabase state was not changed.");
+      return;
+    }
+
     updateInvoice({
       ...invoice,
       status: "PAID",
@@ -275,7 +324,11 @@ function App() {
       txDigest: digest?.digest ?? invoice.txDigest,
       events: [
         ...invoice.events,
-        digest ? `Pay transaction submitted: ${shortAddress(digest.digest)}` : `Paid ${formatSui(invoice.amount)} to ${shortAddress(invoice.paymentRecipient)}`,
+        digest
+          ? `Pay transaction submitted: ${shortAddress(digest.digest)}`
+          : shouldUseDemoFallback(invoice)
+            ? `Paid ${formatSui(invoice.amount)} to ${shortAddress(invoice.paymentRecipient)}`
+            : "Pay transaction skipped",
       ],
     });
     notify(`Funds routed to ${shortAddress(invoice.paymentRecipient)}`);

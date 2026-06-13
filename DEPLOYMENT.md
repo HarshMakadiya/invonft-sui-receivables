@@ -2,6 +2,8 @@
 
 Use this before pushing a demo build or sharing the Cloudflare Pages URL.
 
+Live demo URL: https://invonft-sui-receivables.pages.dev/
+
 ## Cloudflare Pages
 
 - Framework preset: `React (Vite)` or `None`
@@ -44,6 +46,31 @@ in frontend environment variables.
 5. Create a receivable with a connected Testnet wallet.
 6. Confirm the created `InvoiceReceivable` object ID is stored in Supabase.
 7. Confirm the Public verification card links to Suiscan and Walrus.
+
+Current public Testnet deployment:
+
+- Package ID: `0xdbe4bc142611c7c6e49690fdb36e2662679211e9dd857c002b9010aeeb7d1e17`
+- InvoiceCounter ID: `0xe70a4ed4580abaaef7d8e2f9ce26200fb5129ea64f5954fdf22d989dd90593ce`
+- PlatformConfig ID: `0xee50dceb2a53cfeec32a59fcdf6dc32551ef1f97b40d97d0337dd138d51fb9d5`
+- Publish transaction: `DdNzTxFMWcr7By3LS58rfP3VM5j7vQPqX1MUZGC2Tpwf`
+
+## Live Demo Proof
+
+Before submitting, run one full flow with real wallet signatures:
+
+1. Create receivable on Sui Testnet.
+2. Confirm the Sui object ID opens on Suiscan.
+3. Confirm the evidence package has a real Walrus blob ID.
+4. List receivable for financing.
+5. Buy receivable from a buyer wallet.
+6. Confirm the platform fee lands in the configured fee-recipient wallet.
+7. Pay invoice from the configured payer wallet.
+8. Confirm final funds route to the current `payment_recipient`.
+9. Refresh the deployed app and confirm the Supabase row reloads.
+
+Avoid using the no-wallet Supabase fallback for the recorded hackathon demo. It
+is useful for UI development, but the submission should show the live Testnet
+path.
 
 ## Supabase
 
@@ -98,6 +125,11 @@ with check (true);
 After deploy, create a receivable, refresh the page, and confirm it reloads from
 Supabase instead of local state.
 
+Positioning: Sui is the settlement and state authority. Supabase is only the
+demo indexing layer for fast UI reads, filters, refresh survival, and shareable
+invoice pages. A production version should replace permissive demo RLS with
+server-side authorization or an indexer/API.
+
 ## Platform Fee Check
 
 The frontend needs `VITE_INVO_PLATFORM_CONFIG_ID` so financing purchases can pass
@@ -117,6 +149,29 @@ sui client call \
 
 `100` fee bps equals 1%. Fees are charged on receivable financing purchases, not
 on final invoice payment.
+
+## Walrus Proof
+
+For local development, the app can keep a placeholder blob when Walrus upload is
+skipped or unavailable. For submission, create at least one invoice with a real
+Walrus upload and verify the aggregator link from the invoice inspector.
+
+## GitHub Submission Checklist
+
+- Add the deployed demo URL to the repository About website field.
+- Add a concise repo description.
+- Add topics: `sui`, `move`, `walrus`, `defi`, `payments`, `rwa`,
+  `receivables`, `invoice-financing`, `react`, `vite`.
+- Add screenshots and/or demo video to the hackathon submission.
+- Create a release containing the deployed URL, package IDs, and demo video link.
+
+## Compliance Note
+
+This hackathon build is a non-custodial Sui Testnet prototype. It does not
+provide regulated financial services, underwriting, credit ratings, securities
+offerings, investment advice, fiat custody, or real invoice financing.
+Production use would require legal review, KYB/KYC, AML screening, jurisdiction
+checks, invoice verification, privacy controls, and dispute handling.
 
 ## Local Preflight
 

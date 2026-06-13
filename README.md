@@ -2,6 +2,13 @@
 
 React + TypeScript + Tailwind frontend for the InvoNFT PRD.
 
+Live demo: https://invonft-sui-receivables.pages.dev/
+
+InvoNFT turns unpaid invoices into programmable Sui receivable objects. Issuers
+can create receivables, attach Walrus-backed evidence, list payment rights for
+financing, and let the final payer settle directly to the current verified
+payment recipient.
+
 The app focuses on product workflow instead of pitch content:
 
 - Receivables command dashboard
@@ -18,6 +25,17 @@ The app focuses on product workflow instead of pitch content:
 The repo now also includes a Sui Move package under `move/` for the receivable
 object model and payment-right transfer logic.
 
+## Latest Testnet Deployment
+
+- Package ID: `0xdbe4bc142611c7c6e49690fdb36e2662679211e9dd857c002b9010aeeb7d1e17`
+- InvoiceCounter ID: `0xe70a4ed4580abaaef7d8e2f9ce26200fb5129ea64f5954fdf22d989dd90593ce`
+- PlatformConfig ID: `0xee50dceb2a53cfeec32a59fcdf6dc32551ef1f97b40d97d0337dd138d51fb9d5`
+- Publish transaction: `DdNzTxFMWcr7By3LS58rfP3VM5j7vQPqX1MUZGC2Tpwf`
+- Package explorer:
+  https://suiscan.xyz/testnet/object/0xdbe4bc142611c7c6e49690fdb36e2662679211e9dd857c002b9010aeeb7d1e17
+- Publish transaction explorer:
+  https://suiscan.xyz/testnet/tx/DdNzTxFMWcr7By3LS58rfP3VM5j7vQPqX1MUZGC2Tpwf
+
 ## Current Implementation State
 
 - Invoice rows are loaded from Supabase, not hardcoded static invoice data.
@@ -27,6 +45,26 @@ object model and payment-right transfer logic.
 - Supabase is the frontend index used for persistence, filtering, refresh
   survival, and shareable invoice views.
 - Walrus stores invoice/evidence blobs when evidence publishing is enabled.
+- The health score is deterministic product logic, not an AI credit model.
+- The marketplace is a custom Sui transaction flow. Sui Kiosk is a future
+  marketplace hardening path, not part of this MVP.
+
+## Hackathon Proof Checklist
+
+For judging, use a connected Sui Testnet wallet and the deployed contract env
+vars. A fully live proof should show:
+
+1. Create a receivable and capture the Sui transaction digest.
+2. Confirm the created `InvoiceReceivable` object opens in Suiscan Testnet.
+3. Confirm the evidence package uses a real Walrus blob ID and aggregator link.
+4. List the receivable for financing.
+5. Buy the receivable from a buyer wallet and confirm `payment_recipient`
+   changes to the buyer.
+6. Pay the invoice from the configured payer wallet.
+7. Confirm final payment routes to the current `payment_recipient`.
+8. Confirm the platform fee lands in the configured fee-recipient wallet during
+   the buy/financing step.
+9. Refresh the app and confirm the row reloads from Supabase.
 
 ## Local Development
 
@@ -63,9 +101,8 @@ VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your_publishable_or_anon_key
 ```
 
-The frontend already has transaction-builder placeholders for create, list, buy,
-pay, and cancel actions. They intentionally require these values before building
-real Move calls.
+The frontend has transaction builders for create, list, buy, pay, and cancel
+actions. They require these values before building real Move calls.
 
 Walrus URLs are public Testnet endpoints. They are not secrets. Mainnet should
 not use a public unauthenticated publisher.
@@ -77,6 +114,9 @@ The current action buttons run in hybrid mode:
   ID, create/list/buy/pay can submit Sui transactions through dApp Kit.
 - After create succeeds, the frontend waits for the transaction and stores the created
   `InvoiceReceivable` object ID in Supabase.
+
+For the hackathon demo, do not rely on the no-wallet fallback. Use the live
+Testnet path and show the public transaction/object links.
 
 ## Move Package
 
@@ -120,6 +160,10 @@ invoice PDF, computes a `sha256:` metadata checksum, and can upload both the PDF
 and JSON package to the Walrus Testnet publisher. If upload is disabled or fails,
 the UI falls back to a local placeholder blob ID so the demo remains usable.
 
+For judging, create at least one receivable with successful Walrus publishing.
+The public verification panel should show a real Walrus blob ID and a working
+aggregator link. Placeholder blob IDs are only for local development.
+
 ## Public Verification
 
 The selected receivable panel labels each invoice as either demo-local or
@@ -150,6 +194,27 @@ no private environment secrets in the frontend bundle.
 
 See `DEPLOYMENT.md` for the Cloudflare Pages, Sui Testnet, and secret preflight
 checklist.
+
+## Repository Presentation
+
+Recommended GitHub repo metadata:
+
+- Description: `Programmable invoice receivables on Sui with Walrus evidence and non-custodial payment-right financing.`
+- Website: `https://invonft-sui-receivables.pages.dev/`
+- Topics: `sui`, `move`, `walrus`, `defi`, `payments`, `rwa`,
+  `receivables`, `invoice-financing`, `react`, `vite`, `supabase`
+- Add screenshots or a short demo video to the repository description or
+  hackathon submission.
+- Add a GitHub release for the hackathon submission with the deployed URL,
+  package IDs, and demo video link.
+
+## Compliance Note
+
+This hackathon build is a non-custodial Sui Testnet prototype. It does not
+provide regulated financial services, underwriting, credit ratings, securities
+offerings, investment advice, fiat custody, or real invoice financing.
+Production use would require legal review, KYB/KYC, AML screening, jurisdiction
+checks, invoice verification, privacy controls, and dispute handling.
 
 ## Next Integration Steps
 
