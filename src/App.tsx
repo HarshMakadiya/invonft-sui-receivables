@@ -413,27 +413,27 @@ function App() {
       <div className="fixed bottom-[-20rem] right-[-12rem] -z-10 h-[36rem] w-[36rem] rounded-full bg-sun/10 blur-[100px]" />
 
       <div className="mx-auto flex min-h-screen w-full max-w-[1540px] gap-5 p-4 lg:p-5">
-        <aside className="hidden w-[286px] shrink-0 rounded-[1.25rem] bg-lead border border-line p-4 text-ink shadow-flat lg:block">
-          <div className="rounded-[1.2rem] border border-line bg-paperalt/30 p-4">
+        <aside className="hidden w-[248px] shrink-0 self-start rounded-[1.1rem] bg-lead border border-line p-3 text-ink shadow-flat lg:block">
+          <div className="rounded-[1rem] border border-line bg-paperalt/30 p-3">
             <div className="flex items-center gap-3">
-              <div className="grid h-12 w-12 place-items-center rounded-xl bg-moss text-lg font-black text-lead shadow-flat">
+              <div className="grid h-10 w-10 place-items-center rounded-xl bg-moss text-base font-black text-lead shadow-flat">
                 IN
               </div>
               <div>
-                <p className="text-lg font-bold tracking-tight text-ink font-poppins">InvoNFT</p>
-                <p className="text-[10px] text-inkmuted font-mono uppercase tracking-wider">Receivables console</p>
+                <p className="text-base font-bold tracking-tight text-ink font-poppins">InvoNFT</p>
+                <p className="text-[9px] text-inkmuted font-mono uppercase tracking-wider">Receivables console</p>
               </div>
             </div>
 
-            <div className="mt-5 rounded-xl bg-paperalt/50 border border-line p-3">
-              <p className="text-[10px] uppercase tracking-[0.2em] text-inkmuted font-poppins font-semibold">Active role</p>
+            <div className="mt-3 rounded-xl bg-paperalt/50 border border-line p-2.5">
+              <p className="text-[9px] uppercase tracking-[0.16em] text-inkmuted font-poppins font-semibold">Active role</p>
               <div className="mt-2 grid gap-1">
                 {Object.entries(wallets).map(([key, item]) => {
                   const isActive = walletRole === key;
                   return (
                     <button
                       key={key}
-                      className={`w-full flex items-center justify-between rounded-lg px-3 py-2 text-xs font-poppins font-semibold transition-all duration-150 ${isActive
+                      className={`w-full flex items-center justify-between rounded-lg px-2.5 py-1.5 text-[11px] font-poppins font-semibold transition-all duration-150 ${isActive
                         ? "bg-moss text-lead shadow-flat font-bold"
                         : "text-inksecondary bg-transparent hover:bg-paperalt/50 hover:text-ink"
                         }`}
@@ -448,7 +448,7 @@ function App() {
             </div>
           </div>
 
-          <nav className="mt-5 grid gap-1">
+          <nav className="mt-3 grid gap-1">
             <NavItem active={page === "dashboard"} icon={<LayoutDashboard size={16} />} label="Command Center" onClick={() => setPage("dashboard")} />
             <NavItem active={page === "create"} icon={<FilePlus2 size={16} />} label="Create Receivable" onClick={() => setPage("create")} />
             <NavItem active={page === "marketplace"} icon={<Store size={16} />} label="Marketplace" onClick={() => setPage("marketplace")} />
@@ -567,8 +567,8 @@ function Dashboard({
 }) {
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
-      <section className="grid gap-5">
-        <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
+      <section className="grid content-start gap-5">
+        <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4">
           <Metric accent="mint" icon={<ReceiptText />} label="Receivables" value={String(invoices.length)} />
           <Metric accent="aqua" icon={<Store />} label="Listed" value={String(stats.listed)} />
           <Metric accent="sun" icon={<Banknote />} label="Financed" value={String(stats.financed)} />
@@ -576,25 +576,25 @@ function Dashboard({
         </div>
 
         <div className="overflow-hidden rounded-[1.25rem] border border-line bg-lead shadow-flat">
-          <div className="relative min-h-[360px] overflow-hidden bg-paperalt p-5 text-ink md:p-7 border border-line rounded-[1.25rem]">
+          <div className="relative overflow-hidden bg-paperalt p-5 text-ink md:p-6 border border-line rounded-[1.25rem]">
             <div className="absolute inset-0 opacity-10 grid-noise" />
             <div className="absolute right-[-8rem] top-[-10rem] h-80 w-80 rounded-full bg-mosssoft/40 blur-3xl" />
             <div className="absolute bottom-[-9rem] left-[-8rem] h-72 w-72 rounded-full bg-sun/10 blur-3xl" />
-            <div className="relative z-10 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-              <div className="flex flex-col justify-between">
+            <div className="relative z-10 grid items-start gap-6 lg:grid-cols-[1.05fr_0.95fr]">
+              <div>
                 <div>
                   <p className="inline-flex rounded-full border border-moss/25 bg-mosssoft px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-moss font-mono">
                     Live payment-right state
                   </p>
-                  <h2 className="mt-5 max-w-xl text-balance text-2xl md:text-3xl font-bold tracking-tight text-ink font-poppins leading-tight">
+                  <h2 className="mt-4 max-w-xl text-balance text-2xl md:text-3xl font-bold tracking-tight text-ink font-poppins leading-tight">
                     Smart payment routing to verified owners.
                   </h2>
-                  <p className="mt-4 max-w-lg text-xs leading-5 text-inksecondary font-sans">
+                  <p className="mt-3 max-w-lg text-xs leading-5 text-inksecondary font-sans">
                     The settlement interface remains simple. The Sui smart contract handles instant trustless routing: payer funds route directly to the active payment recipient.
                   </p>
                 </div>
                 <button
-                  className="mt-6 self-start inline-flex items-center gap-2 rounded-xl bg-moss px-5 py-3.5 text-xs font-poppins font-bold text-lead transition-all duration-150 hover:-translate-y-0.5 shadow-flat hover:bg-mossdeep"
+                  className="mt-5 inline-flex items-center gap-2 rounded-xl bg-moss px-5 py-3 text-xs font-poppins font-bold text-lead transition-all duration-150 hover:-translate-y-0.5 shadow-flat hover:bg-mossdeep"
                   onClick={onShowMarketplace}
                 >
                   Review financeable invoices <ArrowRight size={14} />
@@ -1415,7 +1415,7 @@ function Portfolio({ invoices, wallet }: { invoices: Invoice[]; wallet: DemoWall
 function NavItem({ active, icon, label, onClick }: { active: boolean; icon: React.ReactNode; label: string; onClick: () => void }) {
   return (
     <button
-      className={`flex items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-poppins font-semibold transition-all duration-200 ${active ? "bg-mosssoft text-moss shadow-flat font-black" : "text-inksecondary hover:bg-paperalt/50 hover:text-ink"
+      className={`flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-[13px] font-poppins font-semibold transition-all duration-200 ${active ? "bg-mosssoft text-moss shadow-flat font-black" : "text-inksecondary hover:bg-paperalt/50 hover:text-ink"
         }`}
       onClick={onClick}
     >
@@ -1485,10 +1485,12 @@ function Metric({ accent, icon, label, value }: { accent: "mint" | "aqua" | "sun
     coral: "bg-coral/10 text-coral border-coral/25",
   }[accent];
   return (
-    <div className="rounded-[1.6rem] border border-line bg-lead p-4 shadow-flat hover:border-moss/40 transition-all duration-300">
-      <div className={`grid h-11 w-11 place-items-center rounded-2xl border ${style}`}>{icon}</div>
-      <p className="mt-5 text-[10px] font-bold uppercase tracking-[0.18em] text-inkmuted font-poppins font-semibold">{label}</p>
-      <p className="mt-1 truncate text-3xl font-bold tracking-tight text-ink font-numbers">{value}</p>
+    <div className="flex min-h-[92px] items-center gap-3 rounded-[1.1rem] border border-line bg-lead p-3.5 shadow-flat transition-all duration-300 hover:border-moss/40">
+      <div className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl border [&>svg]:h-5 [&>svg]:w-5 ${style}`}>{icon}</div>
+      <div className="min-w-0 flex-1">
+        <p className="whitespace-nowrap text-[9px] font-bold uppercase tracking-[0.12em] text-inkmuted font-poppins font-semibold">{label}</p>
+        <p className="mt-1 whitespace-nowrap text-2xl font-bold tracking-tight text-ink font-numbers">{value}</p>
+      </div>
     </div>
   );
 }
