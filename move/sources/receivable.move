@@ -318,7 +318,7 @@ module invonft::receivable {
     }
 
     #[test_only]
-    fun invoice_for_testing(
+    public(package) fun invoice_for_testing(
         issuer: address,
         payer: address,
         amount_mist: u64,
@@ -345,7 +345,7 @@ module invonft::receivable {
     }
 
     #[test_only]
-    fun destroy_for_testing(invoice: InvoiceReceivable) {
+    public(package) fun destroy_for_testing(invoice: InvoiceReceivable) {
         let InvoiceReceivable {
             id,
             issuer: _,
@@ -368,7 +368,7 @@ module invonft::receivable {
     }
 
     #[test_only]
-    fun platform_config_for_testing(
+    public(package) fun platform_config_for_testing(
         owner: address,
         fee_recipient: address,
         fee_bps: u64,
@@ -383,7 +383,7 @@ module invonft::receivable {
     }
 
     #[test_only]
-    fun destroy_config_for_testing(config: PlatformConfig) {
+    public(package) fun destroy_config_for_testing(config: PlatformConfig) {
         let PlatformConfig {
             id,
             owner: _,
