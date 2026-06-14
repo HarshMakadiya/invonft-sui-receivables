@@ -200,13 +200,18 @@ function App() {
     return !hasRealObjectId(invoice);
   }
 
+  function financingPriceFor(invoice: Invoice) {
+    return Math.round(invoice.amount * 0.9 * 1_000_000_000) / 1_000_000_000;
+  }
+
   async function listInvoice(invoice: Invoice) {
     const isLiveInvoice = hasRealObjectId(invoice);
+    const financingPrice = financingPriceFor(invoice);
     const digest = isLiveInvoice
       ? await trySubmitTransaction("List transaction", () =>
         buildListForFinancingTx({
           invoiceObjectId: invoice.objectId,
-          financingPriceSui: Math.floor(invoice.amount * 0.9),
+          financingPriceSui: financingPrice,
           discountBps: 1000,
         }),
       )
@@ -220,7 +225,7 @@ function App() {
     updateInvoice({
       ...invoice,
       financingStatus: "LISTED",
-      financingPrice: Math.floor(invoice.amount * 0.9),
+      financingPrice,
       txDigest: digest?.digest ?? invoice.txDigest,
       events: [
         ...invoice.events,
