@@ -31,11 +31,13 @@ import {
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { evidence, wallets } from "./data/mockReceivables";
+import { appMode, isProductionMode } from "./lib/appMode";
 import { buildEvidencePackage } from "./lib/evidencePackage";
 import { isRealSuiId, isRealTransactionDigest, isRealWalrusBlobId, suiObjectUrl, suiTransactionUrl } from "./lib/explorer";
 import { formatCompactSui, formatSui, shortAddress } from "./lib/format";
 import { healthScore } from "./lib/healthScore";
 import { createInvoicePdfBlob, downloadInvoicePdf } from "./lib/invoicePdf";
+import { fetchReceivablesFromIndexer, isIndexerConfigured, syncReceivableWithIndexer } from "./lib/receivableIndex";
 import { getReceivableContractReadiness, receivableContract } from "./lib/receivableContract";
 import {
   buildBuyReceivableTx,
@@ -47,11 +49,43 @@ import {
 import { fetchReceivablesFromDb, isSupabaseConfigured, saveReceivableToDb } from "./lib/supabaseReceivables";
 import { downloadEvidencePackage, evidenceUrl, uploadEvidencePackage, uploadWalrusBlob } from "./lib/walrus";
 import type { EvidencePackage } from "./types/evidence";
-import type { DemoWallet, FinancingStatus, Invoice, InvoiceStatus, Page, WalletRole } from "./types/receivable";
+import type { FinancingStatus, Invoice, InvoiceStatus, Page, WalletRole } from "./types/receivable";
 
 function readInvoiceIdFromLocation() {
   const match = window.location.pathname.match(/^\/invoice\/([^/]+)/);
   return match ? decodeURIComponent(match[1]) : "";
+}
+
+function sameAddress(left: string | undefined, right: string | undefined) {
+  return Boolean(left && right && left.toLowerCase() === right.toLowerCase());
+}
+
+function isSuiAddress(value: string) {
+  return /^0x[0-9a-fA-F]{64}$/.test(value);
+}
+
+function canListInvoice(invoice: Invoice, walletRole: WalletRole, activeAddress: string) {
+  if (invoice.status !== "PENDING" || invoice.financingStatus !== "NOT_LISTED") {
+    return false;
+  }
+
+  return isProductionMode ? sameAddress(activeAddress, invoice.issuer) : walletRole === "issuer";
+}
+
+function canBuyInvoice(invoice: Invoice, walletRole: WalletRole, activeAddress: string) {
+  if (invoice.status !== "PENDING" || invoice.financingStatus !== "LISTED") {
+    return false;
+  }
+
+  return isProductionMode ? Boolean(activeAddress && !sameAddress(activeAddress, invoice.issuer)) : walletRole === "buyer";
+}
+
+function canPayInvoice(invoice: Invoice, walletRole: WalletRole, activeAddress: string) {
+  if (invoice.status !== "PENDING") {
+    return false;
+  }
+
+  return isProductionMode ? sameAddress(activeAddress, invoice.payer) : walletRole === "payer";
 }
 
 function App() {
@@ -68,6 +102,7 @@ function App() {
 
   const selectedInvoice = invoices.find((invoice) => invoice.id === selectedInvoiceId) ?? invoices[0] ?? null;
   const wallet = wallets[walletRole];
+  const activeAddress = account?.address ?? "";
   const contractReadiness = getReceivableContractReadiness();
   const canSubmitTransactions = Boolean(account && contractReadiness.ready);
 
@@ -75,12 +110,15 @@ function App() {
     let isMounted = true;
 
     async function loadReceivables() {
-      if (!isSupabaseConfigured()) {
+      const canReadIndex = isProductionMode ? isIndexerConfigured() : isSupabaseConfigured();
+      if (!canReadIndex) {
         return;
       }
 
       try {
-        const savedInvoices = await fetchReceivablesFromDb();
+        const savedInvoices = isProductionMode
+          ? await fetchReceivablesFromIndexer()
+          : await fetchReceivablesFromDb();
         if (!isMounted || savedInvoices.length === 0) {
           return;
         }
@@ -91,7 +129,7 @@ function App() {
         setInvoices(savedInvoices);
         setSelectedInvoiceId(linkedInvoice?.id ?? savedInvoices[0].id);
       } catch (error) {
-        console.warn("Could not load receivables from Supabase", error);
+        console.warn("Could not load receivables from index", error);
       }
     }
 
@@ -133,10 +171,20 @@ function App() {
 
   async function syncReceivable(invoice: Invoice) {
     try {
+      if (isProductionMode) {
+        if (!isIndexerConfigured()) {
+          notify("Production indexer API is not configured; persisted state was not changed.");
+          return;
+        }
+
+        await syncReceivableWithIndexer(invoice);
+        return;
+      }
+
       await saveReceivableToDb(invoice);
     } catch (error) {
-      console.warn("Could not sync receivable to Supabase", error);
-      notify("Database sync failed; the current browser session still has the update.");
+      console.warn("Could not sync receivable", error);
+      notify(isProductionMode ? "Indexer sync failed; persisted state was not changed." : "Database sync failed; the current browser session still has the update.");
     }
   }
 
@@ -197,7 +245,7 @@ function App() {
   }
 
   function shouldUseDemoFallback(invoice: Invoice) {
-    return !hasRealObjectId(invoice);
+    return !isProductionMode && !hasRealObjectId(invoice);
   }
 
   function financingPriceFor(invoice: Invoice) {
@@ -205,6 +253,11 @@ function App() {
   }
 
   async function listInvoice(invoice: Invoice) {
+    if (isProductionMode && !canListInvoice(invoice, walletRole, activeAddress)) {
+      notify("Connect the issuer wallet to list this receivable.");
+      return;
+    }
+
     const isLiveInvoice = hasRealObjectId(invoice);
     const financingPrice = financingPriceFor(invoice);
     const digest = isLiveInvoice
@@ -218,7 +271,7 @@ function App() {
       : null;
 
     if (isLiveInvoice && !digest) {
-      notify("List transaction failed; Supabase state was not changed.");
+      notify("List transaction failed; persisted state was not changed.");
       return;
     }
 
@@ -240,7 +293,13 @@ function App() {
   }
 
   async function buyInvoice(invoice: Invoice) {
+    if (isProductionMode && !canBuyInvoice(invoice, walletRole, activeAddress)) {
+      notify("Connect a buyer wallet that is not the issuer.");
+      return;
+    }
+
     const buyerAddress = account?.address ?? wallet.address;
+    const buyerLabel = isProductionMode ? shortAddress(buyerAddress) : wallet.label;
     const isLiveInvoice = hasRealObjectId(invoice);
     const digest = isLiveInvoice
       ? await trySubmitTransaction("Buy transaction", () =>
@@ -252,7 +311,7 @@ function App() {
       : null;
 
     if (isLiveInvoice && !digest) {
-      notify("Buy transaction failed; Supabase state was not changed.");
+      notify("Buy transaction failed; persisted state was not changed.");
       return;
     }
 
@@ -267,11 +326,11 @@ function App() {
         digest
           ? `Buy transaction submitted: ${shortAddress(digest.digest)}`
           : shouldUseDemoFallback(invoice)
-            ? `Payment rights moved to ${wallet.label}`
+            ? `Payment rights moved to ${buyerLabel}`
             : "Buy transaction skipped",
       ],
     });
-    notify(`Payment recipient changed to ${wallet.label}`);
+    notify(`Payment recipient changed to ${buyerLabel}`);
   }
 
   async function markInvoiceOverdue(invoice: Invoice) {
@@ -285,7 +344,7 @@ function App() {
       : null;
 
     if (isLiveInvoice && !digest) {
-      notify("Overdue transaction failed; Supabase state was not changed.");
+      notify("Overdue transaction failed; persisted state was not changed.");
       return;
     }
 
@@ -307,6 +366,11 @@ function App() {
   }
 
   async function payInvoice(invoice: Invoice) {
+    if (isProductionMode && !canPayInvoice(invoice, walletRole, activeAddress)) {
+      notify("Connect the configured payer wallet to pay this invoice.");
+      return;
+    }
+
     const isLiveInvoice = hasRealObjectId(invoice);
     const digest = isLiveInvoice
       ? await trySubmitTransaction("Pay transaction", () =>
@@ -318,7 +382,7 @@ function App() {
       : null;
 
     if (isLiveInvoice && !digest) {
-      notify("Pay transaction failed; Supabase state was not changed.");
+      notify("Pay transaction failed; persisted state was not changed.");
       return;
     }
 
@@ -342,6 +406,11 @@ function App() {
   async function createInvoice(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    if (isProductionMode && !canSubmitTransactions) {
+      notify("Production mode requires a connected wallet and configured Sui contract.");
+      return;
+    }
+
     const next = invoices.length + 1;
     const id = `INV-${String(next).padStart(4, "0")}`;
     const clientName = String(form.get("clientName"));
@@ -349,11 +418,17 @@ function App() {
     const description = String(form.get("description"));
     const amount = Number(form.get("amount"));
     const dueDate = String(form.get("dueDate"));
+    const payerWallet = String(form.get("payerWallet") ?? "").trim();
     const shouldUploadEvidence = form.get("uploadEvidence") === "on";
     const invoiceFile = form.get("invoiceFile");
     const selectedInvoiceFile = invoiceFile instanceof File && invoiceFile.size > 0 ? invoiceFile : null;
     const issuerAddress = account?.address ?? wallets.issuer.address;
-    const payerAddress = account?.address ?? wallets.payer.address;
+    const payerAddress = payerWallet || (isProductionMode ? "" : wallets.payer.address);
+
+    if (isProductionMode && !isSuiAddress(payerAddress)) {
+      notify("Enter a valid payer wallet address before creating a receivable.");
+      return;
+    }
 
     setIsCreating(true);
 
@@ -429,6 +504,12 @@ function App() {
       invoiceReceivableType,
     );
 
+    if (isProductionMode && !createResult?.createdObjectId) {
+      setIsCreating(false);
+      notify("Create transaction failed; receivable was not saved.");
+      return;
+    }
+
     const invoice: Invoice = {
       id,
       objectId: createResult?.createdObjectId ?? `db:${id}`,
@@ -483,27 +564,36 @@ function App() {
               </div>
             </div>
 
-            <div className="mt-3 rounded-xl bg-paperalt/50 border border-line p-2.5">
-              <p className="text-[9px] uppercase tracking-[0.16em] text-inkmuted font-poppins font-semibold">Active role</p>
-              <div className="mt-2 grid gap-1">
-                {Object.entries(wallets).map(([key, item]) => {
-                  const isActive = walletRole === key;
-                  return (
-                    <button
-                      key={key}
-                      className={`w-full flex items-center justify-between rounded-lg px-2.5 py-1.5 text-[11px] font-poppins font-semibold transition-all duration-150 ${isActive
-                        ? "bg-moss text-lead shadow-flat font-bold"
-                        : "text-inksecondary bg-transparent hover:bg-paperalt/50 hover:text-ink"
-                        }`}
-                      onClick={() => setWalletRole(key as WalletRole)}
-                    >
-                      <span>{item.label}</span>
-                      {isActive && <Check size={12} />}
-                    </button>
-                  );
-                })}
+            {!isProductionMode ? (
+              <div className="mt-3 rounded-xl bg-paperalt/50 border border-line p-2.5">
+                <p className="text-[9px] uppercase tracking-[0.16em] text-inkmuted font-poppins font-semibold">Active role</p>
+                <div className="mt-2 grid gap-1">
+                  {Object.entries(wallets).map(([key, item]) => {
+                    const isActive = walletRole === key;
+                    return (
+                      <button
+                        key={key}
+                        className={`w-full flex items-center justify-between rounded-lg px-2.5 py-1.5 text-[11px] font-poppins font-semibold transition-all duration-150 ${isActive
+                          ? "bg-moss text-lead shadow-flat font-bold"
+                          : "text-inksecondary bg-transparent hover:bg-paperalt/50 hover:text-ink"
+                          }`}
+                        onClick={() => setWalletRole(key as WalletRole)}
+                      >
+                        <span>{item.label}</span>
+                        {isActive && <Check size={12} />}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="mt-3 rounded-xl bg-paperalt/50 border border-line p-2.5">
+                <p className="text-[9px] uppercase tracking-[0.16em] text-inkmuted font-poppins font-semibold">Production actor</p>
+                <p className="mt-1.5 truncate text-[11px] font-bold text-ink font-mono">
+                  {activeAddress ? shortAddress(activeAddress) : "Connect wallet"}
+                </p>
+              </div>
+            )}
           </div>
 
           <nav className="mt-3 grid gap-1">
@@ -519,7 +609,7 @@ function App() {
           <header className="glass-card sticky top-4 z-20 mb-5 flex flex-col gap-4 rounded-[1.25rem] p-4 shadow-flat md:flex-row md:items-center md:justify-between border border-line bg-lead/90 backdrop-blur-md">
             <div>
               <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-moss/80 font-mono">
-                <Network size={12} /> Receivables workspace
+                <Network size={12} /> {appMode} workspace
               </p>
               <h1 className="mt-1.5 text-balance text-2xl font-bold tracking-tight text-ink font-poppins">
                 Programmable receivables.
@@ -528,26 +618,35 @@ function App() {
             <div className="flex flex-wrap items-center gap-3">
               <SuiWalletPanel />
 
-              <div className="rounded-2xl border border-line bg-paperalt/30 px-3.5 py-1.5 flex flex-col justify-center min-h-[52px]">
-                <span className="block text-[9px] font-bold text-inkmuted uppercase tracking-wider font-poppins font-semibold">Active Role</span>
-                <div className="mt-1 flex gap-1 bg-paperalt/50 rounded-lg p-0.5 border border-line">
-                  {Object.entries(wallets).map(([key, item]) => {
-                    const isActive = walletRole === key;
-                    return (
-                      <button
-                        key={key}
-                        className={`rounded-md px-2.5 py-0.5 text-[10px] font-poppins font-semibold transition-all duration-150 ${isActive
-                          ? "bg-moss text-lead shadow-flat font-bold"
-                          : "text-inksecondary hover:text-ink hover:bg-paperalt/40"
-                          }`}
-                        onClick={() => setWalletRole(key as WalletRole)}
-                      >
-                        {item.label.split(" ")[0]}
-                      </button>
-                    );
-                  })}
+              {!isProductionMode ? (
+                <div className="rounded-2xl border border-line bg-paperalt/30 px-3.5 py-1.5 flex flex-col justify-center min-h-[52px]">
+                  <span className="block text-[9px] font-bold text-inkmuted uppercase tracking-wider font-poppins font-semibold">Active Role</span>
+                  <div className="mt-1 flex gap-1 bg-paperalt/50 rounded-lg p-0.5 border border-line">
+                    {Object.entries(wallets).map(([key, item]) => {
+                      const isActive = walletRole === key;
+                      return (
+                        <button
+                          key={key}
+                          className={`rounded-md px-2.5 py-0.5 text-[10px] font-poppins font-semibold transition-all duration-150 ${isActive
+                            ? "bg-moss text-lead shadow-flat font-bold"
+                            : "text-inksecondary hover:text-ink hover:bg-paperalt/40"
+                            }`}
+                          onClick={() => setWalletRole(key as WalletRole)}
+                        >
+                          {item.label.split(" ")[0]}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="rounded-2xl border border-line bg-paperalt/30 px-3.5 py-2 flex flex-col justify-center min-h-[52px]">
+                  <span className="block text-[9px] font-bold text-inkmuted uppercase tracking-wider font-poppins font-semibold">Connected actor</span>
+                  <span className="mt-1 truncate text-[10px] font-bold text-ink font-mono">
+                    {activeAddress ? shortAddress(activeAddress) : "Wallet required"}
+                  </span>
+                </div>
+              )}
 
               <button
                 className="rounded-2xl bg-moss px-5 py-3 text-xs font-poppins font-bold text-lead shadow-flat hover:bg-mossdeep transition-all duration-200 hover:-translate-y-0.5"
@@ -567,6 +666,7 @@ function App() {
               selectedInvoice={selectedInvoice}
               stats={stats}
               walletRole={walletRole}
+              activeAddress={activeAddress}
               onBuy={buyInvoice}
               onList={listInvoice}
               onMarkOverdue={markInvoiceOverdue}
@@ -579,9 +679,9 @@ function App() {
           )}
           {page === "create" && <CreateReceivable isCreating={isCreating} onCreate={createInvoice} />}
           {page === "marketplace" && (
-            <Marketplace invoices={invoices} walletRole={walletRole} onBuy={buyInvoice} onSelect={selectInvoice} />
+            <Marketplace activeAddress={activeAddress} invoices={invoices} walletRole={walletRole} onBuy={buyInvoice} onSelect={selectInvoice} />
           )}
-          {page === "portfolio" && <Portfolio invoices={invoices} wallet={wallet} />}
+          {page === "portfolio" && <Portfolio activeAddress={activeAddress} invoices={invoices} walletLabel={wallet.label} walletAddress={wallet.address} />}
         </main>
       </div>
 
@@ -595,6 +695,7 @@ function App() {
 }
 
 function Dashboard({
+  activeAddress,
   invoices,
   query,
   selectedInvoice,
@@ -609,6 +710,7 @@ function Dashboard({
   onSelect,
   onShowMarketplace,
 }: {
+  activeAddress: string;
   invoices: Invoice[];
   query: string;
   selectedInvoice: Invoice | null;
@@ -690,6 +792,7 @@ function Dashboard({
                   key={invoice.id}
                   invoice={invoice}
                   selected={invoice.id === selectedInvoice?.id}
+                  activeAddress={activeAddress}
                   walletRole={walletRole}
                   onBuy={onBuy}
                   onList={onList}
@@ -709,7 +812,7 @@ function Dashboard({
       </section>
 
       {selectedInvoice ? (
-        <InvoiceInspector invoice={selectedInvoice} walletRole={walletRole} onBuy={onBuy} onList={onList} onMarkOverdue={onMarkOverdue} onPay={onPay} />
+        <InvoiceInspector activeAddress={activeAddress} invoice={selectedInvoice} walletRole={walletRole} onBuy={onBuy} onList={onList} onMarkOverdue={onMarkOverdue} onPay={onPay} />
       ) : (
         <EmptyInspector />
       )}
@@ -725,7 +828,7 @@ function EmptyRouteState({ onCreate }: { onCreate: () => void }) {
       </div>
       <h3 className="mt-5 text-sm font-bold text-ink font-poppins">No receivable selected</h3>
       <p className="mt-2 text-xs leading-5 text-inksecondary">
-        Supabase has no receivable rows yet. Create the first receivable and it will appear here after refresh.
+        No indexed receivable rows yet. Create the first receivable and it will appear here after refresh.
       </p>
       <button
         className="mt-5 inline-flex items-center gap-2 rounded-xl bg-moss px-4 py-3 text-xs font-bold text-lead shadow-flat transition hover:-translate-y-0.5 hover:bg-mossdeep"
@@ -746,7 +849,7 @@ function EmptyInspector() {
         </div>
         <h3 className="mt-5 text-sm font-bold text-ink font-poppins">No database records</h3>
         <p className="mt-2 text-xs leading-5 text-inksecondary">
-          Receivables are now loaded from Supabase only. Once a row exists, this panel will show Sui, Walrus, verification, and activity details.
+          Receivables are loaded from the configured index. Once a row exists, this panel will show Sui, Walrus, verification, and activity details.
         </p>
       </div>
     </aside>
@@ -799,6 +902,7 @@ function RouteNode({ label, value, tone }: { label: string; value: string; tone:
 }
 
 function InvoiceInspector({
+  activeAddress,
   invoice,
   walletRole,
   onBuy,
@@ -806,6 +910,7 @@ function InvoiceInspector({
   onMarkOverdue,
   onPay,
 }: {
+  activeAddress: string;
   invoice: Invoice;
   walletRole: WalletRole;
   onBuy: (invoice: Invoice) => void;
@@ -940,7 +1045,7 @@ function InvoiceInspector({
         </div>
 
         <div className="mt-5 grid grid-cols-2 gap-2">
-          <ActionButton invoice={invoice} walletRole={walletRole} onBuy={onBuy} onList={onList} onPay={onPay} />
+          <ActionButton activeAddress={activeAddress} invoice={invoice} walletRole={walletRole} onBuy={onBuy} onList={onList} onPay={onPay} />
           <VerificationLink
             disabled={!hasWalrusBlob}
             href={hasWalrusBlob ? evidenceUrl(invoice.blobId) : undefined}
@@ -1168,6 +1273,7 @@ function EmptyState({
 }
 
 function InvoiceRow({
+  activeAddress,
   invoice,
   selected,
   walletRole,
@@ -1176,6 +1282,7 @@ function InvoiceRow({
   onPay,
   onSelect,
 }: {
+  activeAddress: string;
   invoice: Invoice;
   selected: boolean;
   walletRole: WalletRole;
@@ -1205,18 +1312,20 @@ function InvoiceRow({
           <MiniChip selected={selected}>Recipient {shortAddress(invoice.paymentRecipient)}</MiniChip>
         </div>
       </button>
-      <ActionButton invoice={invoice} walletRole={walletRole} onBuy={onBuy} onList={onList} onPay={onPay} />
+      <ActionButton activeAddress={activeAddress} invoice={invoice} walletRole={walletRole} onBuy={onBuy} onList={onList} onPay={onPay} />
     </article>
   );
 }
 
 function ActionButton({
+  activeAddress,
   invoice,
   walletRole,
   onBuy,
   onList,
   onPay,
 }: {
+  activeAddress: string;
   invoice: Invoice;
   walletRole: WalletRole;
   onBuy: (invoice: Invoice) => void;
@@ -1231,7 +1340,7 @@ function ActionButton({
     );
   }
 
-  if (walletRole === "issuer" && invoice.financingStatus === "NOT_LISTED") {
+  if (canListInvoice(invoice, walletRole, activeAddress)) {
     return (
       <button
         className="rounded-xl bg-moss px-4 py-3 text-xs font-bold text-lead shadow-flat hover:bg-mossdeep transition hover:-translate-y-0.5 duration-150"
@@ -1242,7 +1351,7 @@ function ActionButton({
     );
   }
 
-  if (walletRole === "buyer" && invoice.financingStatus === "LISTED") {
+  if (canBuyInvoice(invoice, walletRole, activeAddress)) {
     return (
       <button
         className="rounded-xl bg-moss px-4 py-3 text-xs font-bold text-lead shadow-flat hover:bg-mossdeep transition hover:-translate-y-0.5 duration-150"
@@ -1253,7 +1362,7 @@ function ActionButton({
     );
   }
 
-  if (walletRole === "payer") {
+  if (canPayInvoice(invoice, walletRole, activeAddress)) {
     return (
       <button
         className="rounded-xl bg-aqua px-4 py-3 text-xs font-bold text-lead shadow-flat hover:bg-moss transition hover:-translate-y-0.5 duration-150"
@@ -1289,11 +1398,24 @@ function CreateReceivable({
           <FileCheck2 className="text-moss" size={32} />
         </div>
 
+        <div className="mb-5 flex gap-3 rounded-2xl border border-sun/25 bg-sun/10 p-4 text-xs leading-5 text-inksecondary">
+          <ShieldCheck className="mt-0.5 shrink-0 text-moss" size={17} />
+          <p>
+            This is a Testnet prototype. Use sample or permissioned invoice data only; production financing, credit decisions, KYB/KYC, and private document handling need a full compliance review.
+          </p>
+        </div>
+
         <div className="grid gap-4 md:grid-cols-2">
           <Field label="Client name" name="clientName" defaultValue="Helio Supply" />
           <Field label="Client email" name="clientEmail" type="email" defaultValue="ap@helio.test" />
           <Field label="Amount in SUI" name="amount" type="number" defaultValue="750" />
           <Field label="Due date" name="dueDate" type="date" defaultValue="2026-07-30" />
+          <Field
+            label="Payer wallet"
+            name="payerWallet"
+            placeholder="0x..."
+            defaultValue={isProductionMode ? "" : wallets.payer.address}
+          />
           <label className="grid gap-2 md:col-span-2">
             <span className="text-xs font-bold text-ink font-sans uppercase tracking-wider">Description</span>
             <textarea
@@ -1356,11 +1478,13 @@ function CreateReceivable({
 }
 
 function Marketplace({
+  activeAddress,
   invoices,
   walletRole,
   onBuy,
   onSelect,
 }: {
+  activeAddress: string;
   invoices: Invoice[];
   walletRole: WalletRole;
   onBuy: (invoice: Invoice) => void;
@@ -1406,7 +1530,7 @@ function Marketplace({
                   Inspect
                 </button>
                 <button
-                  disabled={walletRole !== "buyer"}
+                  disabled={!canBuyInvoice(invoice, walletRole, activeAddress)}
                   className="rounded-xl bg-moss px-4 py-3 text-xs font-bold text-lead shadow-flat hover:bg-mossdeep transition hover:-translate-y-0.5 duration-150 disabled:bg-paperalt/50 disabled:text-inkmuted/40 disabled:border-line border"
                   onClick={() => onBuy(invoice)}
                 >
@@ -1420,7 +1544,7 @@ function Marketplace({
             <EmptyState
               icon={<Store size={18} />}
               title="No invoices listed yet"
-              body="Switch to Issuer, select a pending invoice, and use List rights to create a local marketplace listing."
+              body={isProductionMode ? "A connected issuer wallet must list a live receivable before it appears here." : "Switch to Issuer, select a pending invoice, and use List rights to create a local marketplace listing."}
             />
           </div>
         )}
@@ -1429,15 +1553,26 @@ function Marketplace({
   );
 }
 
-function Portfolio({ invoices, wallet }: { invoices: Invoice[]; wallet: DemoWallet }) {
-  const owned = invoices.filter((invoice) => invoice.buyer === wallet.address);
+function Portfolio({
+  activeAddress,
+  invoices,
+  walletAddress,
+  walletLabel,
+}: {
+  activeAddress: string;
+  invoices: Invoice[];
+  walletAddress: string;
+  walletLabel: string;
+}) {
+  const portfolioAddress = isProductionMode ? activeAddress : walletAddress;
+  const owned = portfolioAddress ? invoices.filter((invoice) => sameAddress(invoice.buyer ?? "", portfolioAddress)) : [];
   const expectedSettlement = owned.filter((invoice) => invoice.status === "PENDING").reduce((sum, invoice) => sum + invoice.amount, 0);
   return (
     <section className="grid gap-5">
       <div className="grid gap-4 sm:grid-cols-3">
         <Metric accent="mint" icon={<WalletCards />} label="Owned rights" value={String(owned.length)} />
         <Metric accent="aqua" icon={<Landmark />} label="Expected settlement" value={formatSui(expectedSettlement)} />
-        <Metric accent="sun" icon={<Clock3 />} label="Current role" value={wallet.label} />
+        <Metric accent="sun" icon={<Clock3 />} label={isProductionMode ? "Connected wallet" : "Current role"} value={isProductionMode ? (activeAddress ? shortAddress(activeAddress) : "Connect wallet") : walletLabel} />
       </div>
       <div className="rounded-[1.25rem] border border-line bg-[#FFFDF7] p-5 shadow-flat md:p-7">
         <h2 className="text-lg font-bold tracking-tight text-ink font-poppins">Buyer positions</h2>
@@ -1485,9 +1620,18 @@ function NavItem({ active, icon, label, onClick }: { active: boolean; icon: Reac
 
 function SuiWalletPanel() {
   const account = useCurrentAccount();
+  const dAppKit = useDAppKit();
   const wallet = useCurrentWallet();
   const network = useCurrentNetwork();
   const connection = useWalletConnection();
+
+  async function disconnectWallet() {
+    try {
+      await dAppKit.disconnectWallet();
+    } catch (error) {
+      console.warn("Could not disconnect wallet", error);
+    }
+  }
 
   return (
     <div className="rounded-2xl border border-line bg-paperalt/30 px-4 py-2 flex flex-col justify-center min-h-[52px]">
@@ -1496,14 +1640,25 @@ function SuiWalletPanel() {
         <span className={`h-1.5 w-1.5 rounded-full ${connection.isConnected ? "bg-moss animate-pulse" : "bg-inkmuted/30"}`} />
       </div>
       <div className="flex flex-col gap-2 mt-1 sm:flex-row sm:items-center">
-        <ConnectButton />
         {account ? (
-          <div className="min-w-0 text-[10px] leading-4 text-inkmuted font-mono">
-            <p className="truncate font-black text-ink">{wallet?.name ?? "Connected"}</p>
-            <p className="truncate">{shortAddress(account.address)} · {network}</p>
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="min-w-0 rounded-xl bg-moss px-3 py-2 text-lead shadow-flat">
+              <p className="truncate text-[11px] font-black font-poppins">{wallet?.name ?? "Connected"}</p>
+              <p className="truncate text-[10px] font-mono">{shortAddress(account.address)} · {network}</p>
+            </div>
+            <button
+              className="rounded-xl border border-line bg-lead px-3 py-2 text-[10px] font-bold text-inksecondary shadow-flat transition hover:bg-paperalt/50 hover:text-ink"
+              onClick={disconnectWallet}
+              type="button"
+            >
+              Disconnect
+            </button>
           </div>
         ) : (
-          <p className="max-w-44 text-[10px] leading-4 text-inkmuted/60 font-mono">Wallet offline</p>
+          <>
+            <ConnectButton />
+            <p className="max-w-44 text-[10px] leading-4 text-inkmuted/60 font-mono">Wallet offline</p>
+          </>
         )}
       </div>
     </div>
@@ -1553,13 +1708,26 @@ function Metric({ accent, icon, label, value }: { accent: "mint" | "aqua" | "sun
   );
 }
 
-function Field({ label, name, defaultValue, type = "text" }: { label: string; name: string; defaultValue: string; type?: string }) {
+function Field({
+  defaultValue,
+  label,
+  name,
+  placeholder,
+  type = "text",
+}: {
+  defaultValue: string;
+  label: string;
+  name: string;
+  placeholder?: string;
+  type?: string;
+}) {
   return (
     <label className="grid gap-2">
       <span className="text-xs font-bold text-ink font-poppins font-semibold uppercase tracking-wider">{label}</span>
       <input
         className="rounded-xl border border-line bg-lead text-ink px-4 py-3 text-sm outline-none transition focus:border-moss focus:ring-1 focus:ring-moss/30 placeholder:text-inkmuted/80"
         name={name}
+        placeholder={placeholder}
         type={type}
         defaultValue={defaultValue}
         required

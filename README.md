@@ -19,6 +19,8 @@ The app focuses on product workflow instead of pitch content:
 - Sui dApp Kit wallet connection on Testnet
 - Public verification links for Sui objects, transaction digests, and Walrus blobs
 - Supabase-backed receivable index so created invoices survive refresh
+- Cloudflare Pages Functions API for production index sync without exposing the
+  Supabase service role key to the browser
 - Shareable `/invoice/:id` URLs for payer/judge review
 - Demo issuer, buyer, and payer role controls for walking through the workflow
 
@@ -42,8 +44,11 @@ object model and payment-right transfer logic.
 - `src/data/mockReceivables.ts` only keeps demo wallet labels and default
   verification helpers for the guided workflow.
 - Sui Testnet is the settlement/state source for live object actions.
-- Supabase is the frontend index used for persistence, filtering, refresh
-  survival, and shareable invoice views.
+- Development/staging can use Supabase directly as a browser index for
+  persistence, filtering, refresh survival, and shareable invoice views.
+- Production mode reads/writes through the Cloudflare Pages Functions indexer
+  API, which verifies the submitted Sui transaction touched the receivable
+  object before syncing Supabase.
 - Walrus stores invoice/evidence blobs when evidence publishing is enabled.
 - The health score is deterministic product logic, not an AI credit model.
 - The marketplace is a custom Sui transaction flow. Sui Kiosk is a future
@@ -64,7 +69,7 @@ vars. A fully live proof should show:
 7. Confirm final payment routes to the current `payment_recipient`.
 8. Confirm the platform fee lands in the configured fee-recipient wallet during
    the buy/financing step.
-9. Refresh the app and confirm the row reloads from Supabase.
+9. Refresh the app and confirm the row reloads from the configured index.
 
 ## Local Development
 
@@ -91,6 +96,8 @@ http://localhost:5173
 Copy `.env.example` to `.env` after the Move package in `move/` is published:
 
 ```bash
+VITE_INVO_APP_MODE=development
+VITE_INVO_INDEXER_URL=
 VITE_INVO_RECEIVABLE_PACKAGE_ID=0x...
 VITE_INVO_RECEIVABLE_MODULE=receivable
 VITE_INVO_INVOICE_COUNTER_ID=0x...
@@ -104,10 +111,24 @@ VITE_SUPABASE_ANON_KEY=your_publishable_or_anon_key
 The frontend has transaction builders for create, list, buy, pay, and cancel
 actions. They require these values before building real Move calls.
 
+For Cloudflare production, set `VITE_INVO_APP_MODE=production` and
+`VITE_INVO_INDEXER_URL=/api`. Add these server-side Cloudflare Pages Function
+variables without the `VITE_` prefix:
+
+```bash
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your_server_side_service_role_key
+SUI_RPC_URL=https://fullnode.testnet.sui.io:443
+```
+
+`SUPABASE_SERVICE_ROLE_KEY` is a secret. Put it only in Cloudflare Pages
+environment variables for Functions. Do not commit it and do not expose it as a
+`VITE_*` variable.
+
 Walrus URLs are public Testnet endpoints. They are not secrets. Mainnet should
 not use a public unauthenticated publisher.
 
-The current action buttons run in hybrid mode:
+In development, the current action buttons run in hybrid mode:
 
 - Without a connected wallet and contract env vars, they update the Supabase-backed demo state.
 - With a connected wallet, package ID, `InvoiceCounter` ID, and `PlatformConfig`
@@ -117,6 +138,10 @@ The current action buttons run in hybrid mode:
 
 For the hackathon demo, do not rely on the no-wallet fallback. Use the live
 Testnet path and show the public transaction/object links.
+
+Set `VITE_INVO_APP_MODE=production` to block no-wallet receivable creation and
+avoid saving local `db:` invoice fallbacks. Production mode also requires the
+trusted index API; it does not use direct browser Supabase writes.
 
 ## Move Package
 
@@ -177,11 +202,11 @@ This flow works best after publishing the Move package and configuring Supabase:
 
 1. Connect a Testnet wallet with SUI.
 2. Create a receivable and optionally publish evidence to Walrus.
-3. Confirm the Sui object ID, transaction digest, and Supabase row are present.
+3. Confirm the Sui object ID, transaction digest, and index row are present.
 4. Use the Issuer role to list payment rights.
 5. Switch to Buyer and buy the listed rights from the marketplace.
 6. Switch to Payer and pay the invoice using the configured payer wallet.
-7. Refresh and confirm the state reloads from Supabase.
+7. Refresh and confirm the state reloads from the configured index.
 
 ## Deployment Direction
 
@@ -224,5 +249,5 @@ checks, invoice verification, privacy controls, and dispute handling.
    contract republish.
 3. Verify platform fees land in the configured fee-recipient wallet during the
    buy/financing step.
-4. Add a production indexer/API if the app needs private search, notifications,
-   compliance workflows, or server-controlled access policies.
+4. Expand the production indexer/API if the app needs private search,
+   notifications, compliance workflows, or server-controlled access policies.

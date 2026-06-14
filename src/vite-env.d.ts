@@ -1,6 +1,8 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
+  readonly VITE_INVO_APP_MODE?: "development" | "staging" | "production";
+  readonly VITE_INVO_INDEXER_URL?: string;
   readonly VITE_INVO_RECEIVABLE_PACKAGE_ID?: string;
   readonly VITE_INVO_RECEIVABLE_MODULE?: string;
   readonly VITE_INVO_INVOICE_COUNTER_ID?: string;

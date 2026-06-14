@@ -128,10 +128,6 @@ mysten-dapp-kit-connect-button {
   --font-sans: 'Poppins', sans-serif;
 }
 
-mysten-dapp-kit-connect-button:hover {
-  transform: translateY(-1px);
-}
-
 mysten-dapp-kit-connect-modal {
   --background: #FFFDF7;
   --foreground: #1A1A17;
@@ -140,4 +136,9 @@ mysten-dapp-kit-connect-modal {
   --border: #D9D3C4;
   --radius: 1.25rem;
   --font-sans: 'Poppins', sans-serif;
+}
+
+mysten-dapp-kit-connect-button {
+  display: inline-flex;
+  transform: none !important;
 }

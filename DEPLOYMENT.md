@@ -11,18 +11,27 @@ Live demo URL: https://invonft-sui-receivables.pages.dev/
 - Build output directory: `dist`
 - Root directory: leave blank unless the repo is nested
 - Environment variables:
+  - `VITE_INVO_APP_MODE=production`
   - `VITE_INVO_RECEIVABLE_PACKAGE_ID`
   - `VITE_INVO_RECEIVABLE_MODULE=receivable`
   - `VITE_INVO_INVOICE_COUNTER_ID`
   - `VITE_INVO_PLATFORM_CONFIG_ID`
   - `VITE_WALRUS_PUBLISHER_URL`
   - `VITE_WALRUS_AGGREGATOR_URL`
-  - `VITE_SUPABASE_URL`
-  - `VITE_SUPABASE_ANON_KEY`
+  - `VITE_INVO_INDEXER_URL=/api`
 
 Only use public IDs and public endpoint URLs in `VITE_*` variables. Private keys,
 mnemonics, admin tokens, or publisher credentials must never be committed or put
 in frontend environment variables.
+
+Cloudflare Pages Functions server-side variables:
+
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUI_RPC_URL=https://fullnode.testnet.sui.io:443`
+
+`SUPABASE_SERVICE_ROLE_KEY` is secret. Store it only as a Cloudflare Pages
+environment variable for Functions. Do not add it to any `VITE_*` variable.
 
 ## Sui Testnet
 
@@ -44,7 +53,7 @@ in frontend environment variables.
    `PlatformConfig` object ID into `.env` locally and Cloudflare Pages
    environment variables.
 5. Create a receivable with a connected Testnet wallet.
-6. Confirm the created `InvoiceReceivable` object ID is stored in Supabase.
+6. Confirm the created `InvoiceReceivable` object ID is stored in the index.
 7. Confirm the Public verification card links to Suiscan and Walrus.
 
 Current public Testnet deployment:
@@ -66,19 +75,21 @@ Before submitting, run one full flow with real wallet signatures:
 6. Confirm the platform fee lands in the configured fee-recipient wallet.
 7. Pay invoice from the configured payer wallet.
 8. Confirm final funds route to the current `payment_recipient`.
-9. Refresh the deployed app and confirm the Supabase row reloads.
+9. Refresh the deployed app and confirm the indexed row reloads.
 
 Avoid using the no-wallet Supabase fallback for the recorded hackathon demo. It
-is useful for UI development, but the submission should show the live Testnet
-path.
+is useful for UI development, but production mode should use the `/api`
+Cloudflare Pages Function indexer and show the live Testnet path.
 
-## Supabase
+## Supabase And Indexer
 
-Create a `receivables` table with public read/write RLS policies for the demo
-index. Only use the publishable/anon key in frontend environments. Never use a
-`service_role` key in Cloudflare Pages or any `VITE_*` variable.
+Create a `receivables` table for the app index. For local development, the
+frontend can use a publishable/anon key directly. For production, use the
+Cloudflare Pages Functions under `functions/api`; they keep the service role key
+server-side and verify that a submitted Sui transaction touched the receivable
+object before syncing the row.
 
-Suggested demo table:
+Suggested table:
 
 ```sql
 create table if not exists public.receivables (
@@ -122,13 +133,18 @@ using (true)
 with check (true);
 ```
 
+For production, prefer read-only anon policies or no anon policies, then let the
+Cloudflare Function use `SUPABASE_SERVICE_ROLE_KEY` server-side. The permissive
+demo insert/update policies are only for local or staging demos where you accept
+browser-side writes.
+
 After deploy, create a receivable, refresh the page, and confirm it reloads from
-Supabase instead of local state.
+the `/api/receivables` index instead of local state.
 
 Positioning: Sui is the settlement and state authority. Supabase is only the
-demo indexing layer for fast UI reads, filters, refresh survival, and shareable
-invoice pages. A production version should replace permissive demo RLS with
-server-side authorization or an indexer/API.
+indexing layer for fast UI reads, filters, refresh survival, and shareable
+invoice pages. Production writes should go through the server-side indexer/API,
+not direct browser RLS writes.
 
 ## Platform Fee Check
 
