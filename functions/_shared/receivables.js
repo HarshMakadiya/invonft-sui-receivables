@@ -77,23 +77,31 @@ export function rowToInvoice(row) {
 }
 
 export function invoiceToRow(invoice) {
+  return invoiceToRowFromChain(invoice);
+}
+
+export function invoiceToRowFromChain(invoice, chainInvoice) {
+  const chainFields = chainInvoice?.fields;
+  const financingStatus = chainFields ? statusFromCode(chainFields.financing_status, financingStatusLabels) : invoice.financingStatus;
+  const paymentRecipient = chainFields?.payment_recipient ?? invoice.paymentRecipient ?? invoice.issuer;
+
   return {
-    invoice_id: invoice.id,
-    sui_object_id: invoice.objectId,
+    invoice_id: chainFields ? invoiceIdFromNumber(chainFields.invoice_number) : invoice.id,
+    sui_object_id: chainInvoice?.objectId ?? invoice.objectId,
     tx_digest: invoice.txDigest ?? null,
-    blob_id: invoice.blobId || null,
-    issuer_wallet: invoice.issuer,
-    payer_wallet: invoice.payer || null,
-    buyer_wallet: invoice.buyer,
+    blob_id: chainFields ? chainFields.blob_id || null : invoice.blobId || null,
+    issuer_wallet: chainFields?.issuer ?? invoice.issuer,
+    payer_wallet: chainFields ? chainFields.payer || null : invoice.payer || null,
+    buyer_wallet: financingStatus === "FINANCED" || invoice.buyer ? paymentRecipient : null,
     client_name: invoice.clientName,
     client_email: invoice.clientEmail || null,
     description: invoice.description || null,
-    amount_sui: invoice.amount,
-    due_date: invoice.dueDate || null,
-    status: invoice.status,
-    financing_status: invoice.financingStatus,
-    financing_price_sui: invoice.financingPrice,
-    metadata_checksum: invoice.metadataChecksum ?? null,
+    amount_sui: chainFields ? mistToSui(chainFields.amount_mist) : invoice.amount,
+    due_date: chainFields ? dateFromMs(chainFields.due_date_ms) : invoice.dueDate || null,
+    status: chainFields ? statusFromCode(chainFields.status, invoiceStatusLabels) : invoice.status,
+    financing_status: financingStatus,
+    financing_price_sui: chainFields ? mistToSui(chainFields.financing_price_mist) : invoice.financingPrice,
+    metadata_checksum: chainFields?.metadata_checksum ?? invoice.metadataChecksum ?? null,
   };
 }
 
@@ -134,36 +142,14 @@ export function validateInvoiceForSync(invoice) {
 }
 
 export async function verifySuiTransaction(env, txDigest, objectId) {
-  const rpcUrl = env.SUI_RPC_URL?.trim() || DEFAULT_SUI_RPC_URL;
-  const response = await fetch(rpcUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
+  const payload = await suiRpc(env, "sui_getTransactionBlock", [
+    txDigest,
+    {
+      showEffects: true,
+      showEvents: true,
+      showObjectChanges: true,
     },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "sui_getTransactionBlock",
-      params: [
-        txDigest,
-        {
-          showEffects: true,
-          showEvents: true,
-          showObjectChanges: true,
-        },
-      ],
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Sui RPC failed: ${response.status} ${response.statusText}`);
-  }
-
-  const payload = await response.json();
-  if (payload.error) {
-    throw new Error(payload.error.message ?? "Sui RPC returned an error.");
-  }
-
+  ]);
   const result = payload.result;
   if (result?.effects?.status?.status !== "success") {
     return false;
@@ -173,9 +159,58 @@ export async function verifySuiTransaction(env, txDigest, objectId) {
   return objectChanges.some((change) => change.objectId === objectId);
 }
 
-export async function upsertInvoice(env, invoice) {
+export async function fetchSuiReceivableObject(env, objectId) {
+  const payload = await suiRpc(env, "sui_getObject", [
+    objectId,
+    {
+      showContent: true,
+      showType: true,
+    },
+  ]);
+  const data = payload.result?.data;
+  const content = data?.content;
+
+  if (!data || content?.dataType !== "moveObject" || !content.fields) {
+    throw new Error("Receivable object was not found on Sui.");
+  }
+
+  const expectedPackageId = env.RECEIVABLE_PACKAGE_ID?.trim() || env.VITE_INVO_RECEIVABLE_PACKAGE_ID?.trim();
+  const expectedModule = env.RECEIVABLE_MODULE?.trim() || env.VITE_INVO_RECEIVABLE_MODULE?.trim() || "receivable";
+  const expectedTypeSuffix = `::${expectedModule}::InvoiceReceivable`;
+
+  const objectType = data.type ?? content.type ?? "";
+
+  if (!String(objectType).endsWith(expectedTypeSuffix)) {
+    throw new Error("Sui object is not an InvoiceReceivable.");
+  }
+
+  if (expectedPackageId && !String(objectType).startsWith(`${expectedPackageId}::`)) {
+    throw new Error("Receivable object belongs to a different package.");
+  }
+
+  const fields = content.fields;
+  return {
+    objectId: data.objectId,
+    type: objectType,
+    fields: {
+      amount_mist: normalizeU64(fields.amount_mist),
+      blob_id: normalizeMoveString(fields.blob_id),
+      due_date_ms: normalizeU64(fields.due_date_ms),
+      financing_price_mist: normalizeU64(fields.financing_price_mist),
+      financing_status: normalizeU8(fields.financing_status),
+      invoice_number: normalizeU64(fields.invoice_number),
+      issuer: normalizeAddress(fields.issuer),
+      metadata_checksum: normalizeMoveString(fields.metadata_checksum),
+      payer: normalizeAddress(fields.payer),
+      payment_recipient: normalizeAddress(fields.payment_recipient),
+      status: normalizeU8(fields.status),
+    },
+  };
+}
+
+export async function upsertInvoice(env, invoice, chainInvoice) {
   const { baseUrl, serviceRoleKey } = getSupabaseConfig(env);
-  const row = invoiceToRow(invoice);
+  const row = invoiceToRowFromChain(invoice, chainInvoice);
   const updateResponse = await fetch(
     `${baseUrl}/rest/v1/receivables?sui_object_id=eq.${encodeURIComponent(row.sui_object_id)}`,
     {
@@ -232,10 +267,90 @@ function normalizeFinancingStatus(status) {
   return status === "LISTED" || status === "FINANCED" || status === "CANCELLED" ? status : "NOT_LISTED";
 }
 
+const invoiceStatusLabels = ["PENDING", "PAID", "OVERDUE"];
+const financingStatusLabels = ["NOT_LISTED", "LISTED", "FINANCED", "CANCELLED"];
+
 function isSuiAddress(value) {
   return /^0x[0-9a-fA-F]{64}$/.test(value);
 }
 
 function isSuiObjectId(value) {
   return isSuiAddress(value);
+}
+
+async function suiRpc(env, method, params) {
+  const rpcUrl = env.SUI_RPC_URL?.trim() || DEFAULT_SUI_RPC_URL;
+  const response = await fetch(rpcUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method,
+      params,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Sui RPC failed: ${response.status} ${response.statusText}`);
+  }
+
+  const payload = await response.json();
+  if (payload.error) {
+    throw new Error(payload.error.message ?? "Sui RPC returned an error.");
+  }
+
+  return payload;
+}
+
+function normalizeAddress(value) {
+  return typeof value === "string" ? value : "";
+}
+
+function normalizeU8(value) {
+  return Number(value ?? 0);
+}
+
+function normalizeU64(value) {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (typeof value === "number") {
+    return String(value);
+  }
+
+  return "0";
+}
+
+function normalizeMoveString(value) {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  const bytes = value?.fields?.bytes ?? value?.bytes;
+  if (Array.isArray(bytes)) {
+    return new TextDecoder().decode(new Uint8Array(bytes));
+  }
+
+  return "";
+}
+
+function mistToSui(mist) {
+  return Number(BigInt(mist)) / 1_000_000_000;
+}
+
+function dateFromMs(ms) {
+  const value = Number(BigInt(ms));
+  return value > 0 ? new Date(value).toISOString().slice(0, 10) : null;
+}
+
+function statusFromCode(code, labels) {
+  return labels[Number(code)] ?? labels[0];
+}
+
+function invoiceIdFromNumber(invoiceNumber) {
+  return `INV-${String(invoiceNumber).padStart(4, "0")}`;
 }

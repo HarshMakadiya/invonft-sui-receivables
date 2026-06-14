@@ -177,7 +177,13 @@ function App() {
           return;
         }
 
-        await syncReceivableWithIndexer(invoice);
+        const savedInvoice = await syncReceivableWithIndexer(invoice);
+        if (savedInvoice) {
+          setInvoices((current) =>
+            current.map((item) => (item.id === invoice.id || item.objectId === invoice.objectId ? savedInvoice : item)),
+          );
+          setSelectedInvoiceId((current) => (current === invoice.id ? savedInvoice.id : current));
+        }
         return;
       }
 

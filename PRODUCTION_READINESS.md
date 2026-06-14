@@ -3,6 +3,9 @@
 This document separates the current hackathon/Testnet build from the work needed
 before real users, real invoices, or real money.
 
+For the broader architecture, trust boundaries, consistency model, and design
+invariants, see `SYSTEM_DESIGN.md`.
+
 ## Current State
 
 - Frontend: React/Vite static app on Cloudflare Pages.
@@ -26,8 +29,9 @@ before real users, real invoices, or real money.
 
 2. Add a chain indexer or trusted sync service. Started.
    - Sui is the source of truth for status, payment recipient, and financing.
-   - The current Function verifies the transaction succeeded and touched the
-     receivable object before syncing Supabase.
+   - The current Function verifies the transaction succeeded, touched the
+     receivable object, reads that object from Sui, and derives chain-owned
+     fields before syncing Supabase.
    - Next hardening step: run a background event indexer that reconstructs rows
      from chain state without trusting browser-submitted fields.
 

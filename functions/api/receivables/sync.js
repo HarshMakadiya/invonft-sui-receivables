@@ -1,4 +1,4 @@
-import { handleOptions, jsonResponse, upsertInvoice, validateInvoiceForSync, verifySuiTransaction } from "../../_shared/receivables.js";
+import { fetchSuiReceivableObject, handleOptions, jsonResponse, upsertInvoice, validateInvoiceForSync, verifySuiTransaction } from "../../_shared/receivables.js";
 
 export function onRequestOptions() {
   return handleOptions();
@@ -17,7 +17,8 @@ export async function onRequestPost({ request, env }) {
       return jsonResponse({ error: "Transaction did not touch the receivable object." }, { status: 409 });
     }
 
-    const savedInvoice = await upsertInvoice(env, invoice);
+    const chainInvoice = await fetchSuiReceivableObject(env, invoice.objectId);
+    const savedInvoice = await upsertInvoice(env, invoice, chainInvoice);
     return jsonResponse(savedInvoice);
   } catch (error) {
     console.error(error);

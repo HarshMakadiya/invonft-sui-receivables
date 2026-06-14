@@ -29,9 +29,13 @@ Cloudflare Pages Functions server-side variables:
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `SUI_RPC_URL=https://fullnode.testnet.sui.io:443`
+- `RECEIVABLE_PACKAGE_ID`
+- `RECEIVABLE_MODULE=receivable`
 
 `SUPABASE_SERVICE_ROLE_KEY` is secret. Store it only as a Cloudflare Pages
 environment variable for Functions. Do not add it to any `VITE_*` variable.
+`RECEIVABLE_PACKAGE_ID` is public, but setting it server-side lets the Function
+reject objects that do not belong to the deployed InvoNFT package.
 
 ## Sui Testnet
 
@@ -86,8 +90,9 @@ Cloudflare Pages Function indexer and show the live Testnet path.
 Create a `receivables` table for the app index. For local development, the
 frontend can use a publishable/anon key directly. For production, use the
 Cloudflare Pages Functions under `functions/api`; they keep the service role key
-server-side and verify that a submitted Sui transaction touched the receivable
-object before syncing the row.
+server-side, verify that a submitted Sui transaction touched the receivable
+object, read the current Sui object, and derive chain-authoritative fields
+before syncing the row.
 
 Suggested table:
 

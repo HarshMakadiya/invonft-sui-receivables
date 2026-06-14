@@ -119,11 +119,16 @@ variables without the `VITE_` prefix:
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your_server_side_service_role_key
 SUI_RPC_URL=https://fullnode.testnet.sui.io:443
+RECEIVABLE_PACKAGE_ID=0x...
+RECEIVABLE_MODULE=receivable
 ```
 
 `SUPABASE_SERVICE_ROLE_KEY` is a secret. Put it only in Cloudflare Pages
 environment variables for Functions. Do not commit it and do not expose it as a
 `VITE_*` variable.
+
+`RECEIVABLE_PACKAGE_ID` and `RECEIVABLE_MODULE` are public, but setting them for
+Functions lets the API reject unrelated Sui objects before syncing the index.
 
 Walrus URLs are public Testnet endpoints. They are not secrets. Mainnet should
 not use a public unauthenticated publisher.
@@ -219,6 +224,9 @@ no private environment secrets in the frontend bundle.
 
 See `DEPLOYMENT.md` for the Cloudflare Pages, Sui Testnet, and secret preflight
 checklist.
+
+See `SYSTEM_DESIGN.md` for architecture, trust boundaries, source-of-truth
+rules, and production guardrails.
 
 ## Repository Presentation
 
