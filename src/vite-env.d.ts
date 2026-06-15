@@ -9,6 +9,7 @@ interface ImportMetaEnv {
   readonly VITE_INVO_PLATFORM_CONFIG_ID?: string;
   readonly VITE_WALRUS_PUBLISHER_URL?: string;
   readonly VITE_WALRUS_AGGREGATOR_URL?: string;
+  readonly VITE_WALRUS_STORAGE_EPOCHS?: string;
   readonly VITE_SUPABASE_URL?: string;
   readonly VITE_SUPABASE_ANON_KEY?: string;
 }

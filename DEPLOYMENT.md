@@ -18,6 +18,7 @@ Live demo URL: https://invonft-sui-receivables.pages.dev/
   - `VITE_INVO_PLATFORM_CONFIG_ID`
   - `VITE_WALRUS_PUBLISHER_URL`
   - `VITE_WALRUS_AGGREGATOR_URL`
+  - `VITE_WALRUS_STORAGE_EPOCHS=5`
   - `VITE_INVO_INDEXER_URL=/api`
 
 Only use public IDs and public endpoint URLs in `VITE_*` variables. Private keys,
@@ -176,6 +177,11 @@ on final invoice payment.
 For local development, the app can keep a placeholder blob when Walrus upload is
 skipped or unavailable. For submission, create at least one invoice with a real
 Walrus upload and verify the aggregator link from the invoice inspector.
+
+Walrus Testnet blobs are time-bound. The frontend uploads with
+`VITE_WALRUS_STORAGE_EPOCHS` epochs, defaulting to `5`. If an older invoice shows
+`Walrus blob not found`, create a fresh receivable with evidence publishing
+enabled.
 
 ## GitHub Submission Checklist
 

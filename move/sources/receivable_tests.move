@@ -74,12 +74,22 @@ module invonft::receivable_tests {
     }
 
     #[test]
-    #[expected_failure(abort_code = 5)]
-    fun financing_price_must_be_less_than_invoice_amount() {
+    fun financing_price_can_equal_invoice_amount() {
         let mut ctx = tx_context::dummy();
         let mut invoice = receivable::invoice_for_testing(@0x0, @0x0, 100, &mut ctx);
 
         receivable::list_for_financing(&mut invoice, 100, 0, &mut ctx);
+        assert!(receivable::financing_status(&invoice) == FINANCING_LISTED, 0);
+        receivable::destroy_for_testing(invoice);
+    }
+
+    #[test]
+    #[expected_failure(abort_code = 5)]
+    fun financing_price_must_be_greater_than_zero() {
+        let mut ctx = tx_context::dummy();
+        let mut invoice = receivable::invoice_for_testing(@0x0, @0x0, 100, &mut ctx);
+
+        receivable::list_for_financing(&mut invoice, 0, 10000, &mut ctx);
         receivable::destroy_for_testing(invoice);
     }
 

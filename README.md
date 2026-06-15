@@ -104,6 +104,7 @@ VITE_INVO_INVOICE_COUNTER_ID=0x...
 VITE_INVO_PLATFORM_CONFIG_ID=0x...
 VITE_WALRUS_PUBLISHER_URL=https://publisher.walrus-testnet.walrus.space
 VITE_WALRUS_AGGREGATOR_URL=https://aggregator.walrus-testnet.walrus.space
+VITE_WALRUS_STORAGE_EPOCHS=5
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your_publishable_or_anon_key
 ```
@@ -193,6 +194,10 @@ the UI falls back to a local placeholder blob ID so the demo remains usable.
 For judging, create at least one receivable with successful Walrus publishing.
 The public verification panel should show a real Walrus blob ID and a working
 aggregator link. Placeholder blob IDs are only for local development.
+
+Walrus Testnet blobs are time-bound. New uploads use
+`VITE_WALRUS_STORAGE_EPOCHS`, defaulting to `5`, but older evidence can still
+expire and return `404`.
 
 ## Public Verification
 

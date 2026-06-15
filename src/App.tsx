@@ -99,6 +99,7 @@ function App() {
   const [query, setQuery] = useState("");
   const [toast, setToast] = useState("");
   const [isCreating, setIsCreating] = useState(false);
+  const [listingInvoice, setListingInvoice] = useState<Invoice | null>(null);
 
   const selectedInvoice = invoices.find((invoice) => invoice.id === selectedInvoiceId) ?? invoices[0] ?? null;
   const wallet = wallets[walletRole];
@@ -254,24 +255,39 @@ function App() {
     return !isProductionMode && !hasRealObjectId(invoice);
   }
 
-  function financingPriceFor(invoice: Invoice) {
-    return Math.round(invoice.amount * 0.9 * 1_000_000_000) / 1_000_000_000;
+  function financingPriceFor(invoice: Invoice, discountBps: number) {
+    return Math.round(invoice.amount * ((10_000 - discountBps) / 10_000) * 1_000_000_000) / 1_000_000_000;
   }
 
-  async function listInvoice(invoice: Invoice) {
+  function requestListInvoice(invoice: Invoice) {
     if (isProductionMode && !canListInvoice(invoice, walletRole, activeAddress)) {
       notify("Connect the issuer wallet to list this receivable.");
       return;
     }
 
+    setListingInvoice(invoice);
+  }
+
+  async function listInvoice(invoice: Invoice, discountPercent: number) {
+    if (!Number.isFinite(discountPercent) || discountPercent < 0 || discountPercent >= 100) {
+      notify("Enter a discount from 0 up to less than 100.");
+      return;
+    }
+
+    const discountBps = Math.round(discountPercent * 100);
     const isLiveInvoice = hasRealObjectId(invoice);
-    const financingPrice = financingPriceFor(invoice);
+    const financingPrice = financingPriceFor(invoice, discountBps);
+    if (financingPrice <= 0 || financingPrice > invoice.amount) {
+      notify("Financing price must be greater than 0 and no more than face value.");
+      return;
+    }
+
     const digest = isLiveInvoice
       ? await trySubmitTransaction("List transaction", () =>
         buildListForFinancingTx({
           invoiceObjectId: invoice.objectId,
           financingPriceSui: financingPrice,
-          discountBps: 1000,
+          discountBps,
         }),
       )
       : null;
@@ -295,7 +311,8 @@ function App() {
             : "List transaction skipped",
       ],
     });
-    notify(`${invoice.id} listed at 10% discount`);
+    setListingInvoice(null);
+    notify(`${invoice.id} listed at ${discountPercent}% discount`);
   }
 
   async function buyInvoice(invoice: Invoice) {
@@ -674,7 +691,7 @@ function App() {
               walletRole={walletRole}
               activeAddress={activeAddress}
               onBuy={buyInvoice}
-              onList={listInvoice}
+              onList={requestListInvoice}
               onMarkOverdue={markInvoiceOverdue}
               onPay={payInvoice}
               onCreate={() => setPage("create")}
@@ -695,6 +712,14 @@ function App() {
         <div className="fixed bottom-5 right-5 z-50 rounded-2xl bg-ink px-5 py-4 text-sm font-bold text-white shadow-lifted">
           {toast}
         </div>
+      )}
+
+      {listingInvoice && (
+        <ListReceivableModal
+          invoice={listingInvoice}
+          onClose={() => setListingInvoice(null)}
+          onSubmit={(discountPercent) => listInvoice(listingInvoice, discountPercent)}
+        />
       )}
     </div>
   );
@@ -987,8 +1012,8 @@ function InvoiceInspector({
         {/* Digital Document Section (Verdacert-style document preview) */}
         <div className="mt-5 p-4 rounded-xl border border-line bg-lead shadow-inner font-mono text-[11px] text-inksecondary relative overflow-hidden">
           <div className="absolute top-2 right-2 flex gap-1">
-            <span className="bg-mosssoft text-moss border border-moss/20 rounded px-1.5 py-0.5 text-[8px] font-bold tracking-wider uppercase font-mono">
-              Walrus Certified
+            <span className={`${hasWalrusBlob ? "bg-mosssoft text-moss border-moss/20" : "bg-paperalt text-inkmuted border-line"} border rounded px-1.5 py-0.5 text-[8px] font-bold tracking-wider uppercase font-mono`}>
+              {hasWalrusBlob ? "Walrus Linked" : "Evidence Not Published"}
             </span>
           </div>
 
@@ -1088,7 +1113,12 @@ function InvoiceInspector({
           <div className="mt-4 rounded-xl border border-line bg-paperalt/30 p-4">
             <h3 className="text-xs font-bold uppercase tracking-wider text-ink font-poppins">Walrus evidence preview</h3>
             {evidenceError ? (
-              <p className="mt-2 text-xs leading-5 text-coral">{evidenceError}</p>
+              <div className="mt-2 grid gap-2">
+                <p className="text-xs leading-5 text-coral">{evidenceError}</p>
+                <p className="text-[11px] leading-5 text-inksecondary">
+                  Create a new receivable with evidence publishing enabled to generate a fresh Walrus Testnet blob.
+                </p>
+              </div>
             ) : evidencePreview ? (
               <div className="mt-3 grid gap-2 text-[10px] text-inksecondary font-mono">
                 <EvidencePreviewRow label="Invoice" value={evidencePreview.invoiceNumber} />
@@ -1479,6 +1509,136 @@ function CreateReceivable({
           body="The health score and verification checks help buyers compare receivables before they purchase payment rights."
         />
       </div>
+    </div>
+  );
+}
+
+function ListReceivableModal({
+  invoice,
+  onClose,
+  onSubmit,
+}: {
+  invoice: Invoice;
+  onClose: () => void;
+  onSubmit: (discountPercent: number) => void;
+}) {
+  const [discount, setDiscount] = useState("10");
+  const discountPercent = Number(discount);
+  const isValidDiscount = Number.isFinite(discountPercent) && discountPercent >= 0 && discountPercent < 100;
+  const buyerPrice = isValidDiscount
+    ? Math.round(invoice.amount * ((100 - discountPercent) / 100) * 1_000_000_000) / 1_000_000_000
+    : 0;
+  const isValidPrice = buyerPrice > 0 && buyerPrice <= invoice.amount;
+  const presetDiscounts = [0, 5, 10, 15];
+
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+
+  function submitListing(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!isValidDiscount || !isValidPrice) {
+      return;
+    }
+
+    onSubmit(discountPercent);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-ink/45 px-4 py-6 backdrop-blur-sm">
+      <form
+        className="w-full max-w-lg rounded-[1.5rem] border border-line bg-[#FFFDF7] p-5 shadow-lifted md:p-6"
+        onSubmit={submitListing}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-moss font-poppins font-semibold">List payment rights</p>
+            <h2 className="mt-1.5 text-xl font-bold tracking-tight text-ink font-poppins">{invoice.id}</h2>
+            <p className="mt-1 text-xs leading-5 text-inksecondary">
+              Choose the buyer discount before signing the Sui listing transaction.
+            </p>
+          </div>
+          <button
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-line bg-lead text-inksecondary shadow-flat transition hover:bg-paperalt/50 hover:text-ink"
+            onClick={onClose}
+            type="button"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="mt-5 grid gap-3 rounded-2xl border border-line bg-paperalt/35 p-4">
+          <div className="grid grid-cols-2 gap-3">
+            <SmallStat label="Face value" value={formatSui(invoice.amount)} />
+            <SmallStat label="Buyer pays" value={isValidPrice ? formatSui(buyerPrice) : "--"} />
+          </div>
+          <label className="grid gap-2">
+            <span className="text-xs font-bold uppercase tracking-wider text-ink font-poppins font-semibold">Buyer discount</span>
+            <div className="flex items-center rounded-xl border border-line bg-lead px-4 py-3 focus-within:border-moss focus-within:ring-1 focus-within:ring-moss/30">
+              <input
+                className="min-w-0 flex-1 bg-transparent text-lg font-bold text-ink outline-none font-numbers"
+                inputMode="decimal"
+                min="0"
+                max="99.99"
+                onChange={(event) => setDiscount(event.target.value)}
+                step="0.01"
+                type="number"
+                value={discount}
+              />
+              <span className="text-xs font-bold text-inkmuted font-mono">%</span>
+            </div>
+          </label>
+          <div className="flex flex-wrap gap-2">
+            {presetDiscounts.map((preset) => (
+              <button
+                className={`rounded-full border px-3 py-1.5 text-[11px] font-bold transition ${
+                  discount === String(preset)
+                    ? "border-moss/25 bg-mosssoft text-moss"
+                    : "border-line bg-lead text-inksecondary hover:bg-paperalt/45 hover:text-ink"
+                }`}
+                key={preset}
+                onClick={() => setDiscount(String(preset))}
+                type="button"
+              >
+                {preset}% discount
+              </button>
+            ))}
+          </div>
+          {!isValidDiscount || !isValidPrice ? (
+            <p className="text-[11px] leading-5 text-coral">
+              Enter a discount from 0 up to less than 100. Buyer price must be greater than 0 and no more than face value.
+            </p>
+          ) : (
+            <p className="text-[11px] leading-5 text-inksecondary">
+              Buyer receives the right to collect {formatSui(invoice.amount)} later by paying {formatSui(buyerPrice)} now.
+            </p>
+          )}
+        </div>
+
+        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button
+            className="rounded-xl border border-line bg-lead px-5 py-3 text-xs font-bold text-ink shadow-flat transition hover:bg-paperalt/50"
+            onClick={onClose}
+            type="button"
+          >
+            Cancel
+          </button>
+          <button
+            className="rounded-xl border border-moss bg-moss px-5 py-3 text-xs font-bold text-lead shadow-flat transition hover:bg-mossdeep disabled:border-line disabled:bg-paperalt/50 disabled:text-inkmuted/50"
+            disabled={!isValidDiscount || !isValidPrice}
+            type="submit"
+          >
+            Continue to wallet
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

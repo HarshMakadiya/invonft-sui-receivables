@@ -3,10 +3,12 @@ import { canonicalJson } from "./evidencePackage";
 
 const DEFAULT_PUBLISHER_URL = "https://publisher.walrus-testnet.walrus.space";
 const DEFAULT_AGGREGATOR_URL = "https://aggregator.walrus-testnet.walrus.space";
+const DEFAULT_STORAGE_EPOCHS = 5;
 
 export const walrusConfig = {
   publisherUrl: stripTrailingSlash(import.meta.env.VITE_WALRUS_PUBLISHER_URL ?? DEFAULT_PUBLISHER_URL),
   aggregatorUrl: stripTrailingSlash(import.meta.env.VITE_WALRUS_AGGREGATOR_URL ?? DEFAULT_AGGREGATOR_URL),
+  storageEpochs: parseStorageEpochs(import.meta.env.VITE_WALRUS_STORAGE_EPOCHS),
 };
 
 type WalrusStoreResponse =
@@ -38,7 +40,7 @@ export async function uploadEvidencePackage(packageData: EvidencePackage): Promi
 }
 
 export async function uploadWalrusBlob(blob: Blob): Promise<WalrusUploadResult> {
-  const response = await fetch(`${walrusConfig.publisherUrl}/v1/blobs?epochs=1`, {
+  const response = await fetch(`${walrusConfig.publisherUrl}/v1/blobs?epochs=${walrusConfig.storageEpochs}`, {
     method: "PUT",
     headers: {
       "Content-Type": blob.type || "application/octet-stream",
@@ -84,7 +86,7 @@ async function fetchWithBackoff(url: string, retries: number) {
         return response;
       }
 
-      lastError = new Error(`Walrus read failed: ${response.status} ${response.statusText}`);
+      lastError = new Error(await walrusReadErrorMessage(response));
       if (response.status !== 404) {
         throw lastError;
       }
@@ -104,4 +106,27 @@ function wait(ms: number) {
 
 function stripTrailingSlash(value: string) {
   return value.replace(/\/$/, "");
+}
+
+function parseStorageEpochs(value: string | undefined) {
+  const epochs = Number(value);
+  return Number.isFinite(epochs) && epochs > 0 ? Math.floor(epochs) : DEFAULT_STORAGE_EPOCHS;
+}
+
+async function walrusReadErrorMessage(response: Response) {
+  if (response.status === 404) {
+    return "Walrus blob not found. It may have expired on Testnet, been uploaded to a different Walrus network, or the stored blob ID is incorrect.";
+  }
+
+  try {
+    const payload = await response.json();
+    const message = payload?.error?.message ?? payload?.message;
+    if (message) {
+      return `Walrus read failed: ${response.status} ${message}`;
+    }
+  } catch {
+    // Keep the generic response text below.
+  }
+
+  return `Walrus read failed: ${response.status} ${response.statusText}`;
 }

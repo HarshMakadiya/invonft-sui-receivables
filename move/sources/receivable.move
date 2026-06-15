@@ -170,7 +170,7 @@ module invonft::receivable {
         assert!(tx_context::sender(ctx) == invoice.issuer, E_NOT_ISSUER);
         assert!(invoice.status == STATUS_PENDING, E_NOT_PENDING);
         assert!(invoice.financing_status != FINANCING_FINANCED, E_ALREADY_FINANCED);
-        assert!(financing_price_mist > 0 && financing_price_mist < invoice.amount_mist, E_BAD_FINANCING_PRICE);
+        assert!(financing_price_mist > 0 && financing_price_mist <= invoice.amount_mist, E_BAD_FINANCING_PRICE);
 
         invoice.financing_status = FINANCING_LISTED;
         invoice.financing_price_mist = financing_price_mist;
