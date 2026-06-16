@@ -49,7 +49,7 @@ object model and payment-right transfer logic.
 - Production mode reads/writes through the Cloudflare Pages Functions indexer
   API, which verifies the submitted Sui transaction touched the receivable
   object before syncing Supabase.
-- Walrus stores invoice/evidence blobs when evidence publishing is enabled.
+- Walrus stores invoice/evidence blobs for every created receivable.
 - The health score is deterministic product logic, not an AI credit model.
 - The marketplace is a custom Sui transaction flow. Sui Kiosk is a future
   marketplace hardening path, not part of this MVP.
@@ -244,13 +244,14 @@ Notes:
 ## Walrus Evidence
 
 The create flow builds a deterministic evidence JSON package, generates a simple
-invoice PDF, computes a `sha256:` metadata checksum, and can upload both the PDF
-and JSON package to the Walrus Testnet publisher. If upload is disabled or fails,
-the UI falls back to a local placeholder blob ID so the demo remains usable.
+invoice PDF when no file is attached, computes a `sha256:` metadata checksum,
+and uploads both the PDF/file and JSON package to the Walrus Testnet publisher.
+If upload fails, the UI falls back to a local placeholder blob ID so the demo
+remains usable, but the intended path is always Walrus-backed evidence.
 
 For judging, create at least one receivable with successful Walrus publishing.
 The public verification panel should show a real Walrus blob ID and a working
-aggregator link. Placeholder blob IDs are only for local development.
+aggregator link. Placeholder blob IDs should be treated as failed uploads.
 
 Walrus Testnet blobs are time-bound. New uploads use
 `VITE_WALRUS_STORAGE_EPOCHS`, defaulting to `5`, but older evidence can still

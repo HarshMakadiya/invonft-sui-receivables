@@ -13,6 +13,8 @@ node_modules/.tmp/
 .env
 .env.*
 !.env.example
+.dev.vars
+.dev.vars.*
 *.pem
 *.key
 *.p12
@@ -37,6 +39,7 @@ pnpm-debug.log*
 .cache/
 .parcel-cache/
 coverage/
+.wrangler/
 
 # Sui Move
 move/build/

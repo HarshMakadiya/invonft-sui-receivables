@@ -515,7 +515,6 @@ function App() {
     const amount = Number(form.get("amount")) || lineItemsTotal;
     const dueDate = String(form.get("dueDate"));
     const payerWallet = String(form.get("payerWallet") ?? "").trim();
-    const shouldUploadEvidence = form.get("uploadEvidence") === "on";
     const invoiceFile = form.get("invoiceFile");
     const selectedInvoiceFile = invoiceFile instanceof File && invoiceFile.size > 0 ? invoiceFile : null;
     const issuerAddress = account?.address ?? wallets.issuer.address;
@@ -540,28 +539,26 @@ function App() {
     let invoicePdfBlobId: string | undefined;
     let evidenceEvent = "Evidence package prepared";
 
-    if (shouldUploadEvidence) {
-      const invoicePdf =
-        selectedInvoiceFile ??
-        createInvoicePdfBlob({
-          invoiceNumber: id,
-          clientName,
-          clientEmail,
-          description,
-          amount,
-          dueDate,
-          issuer: issuerAddress,
-          payer: payerAddress,
-        });
+    const invoicePdf =
+      selectedInvoiceFile ??
+      createInvoicePdfBlob({
+        invoiceNumber: id,
+        clientName,
+        clientEmail,
+        description,
+        amount,
+        dueDate,
+        issuer: issuerAddress,
+        payer: payerAddress,
+      });
 
-      try {
-        const upload = await uploadWalrusBlob(invoicePdf);
-        invoicePdfBlobId = upload.blobId;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Invoice file upload failed";
-        evidenceEvent = `Invoice file upload skipped: ${message}`;
-        notify("Invoice file upload failed; trying evidence JSON next.");
-      }
+    try {
+      const upload = await uploadWalrusBlob(invoicePdf);
+      invoicePdfBlobId = upload.blobId;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Invoice file upload failed";
+      evidenceEvent = `Invoice file upload skipped: ${message}`;
+      notify("Invoice file upload failed; trying evidence JSON next.");
     }
 
     const evidencePackage = await buildEvidencePackage({
@@ -578,19 +575,17 @@ function App() {
       lineItems,
     });
 
-    if (shouldUploadEvidence) {
-      try {
-        const upload = await uploadEvidencePackage(evidencePackage);
-        blobId = upload.blobId;
-        blobObjectId = upload.blobObjectId;
-        evidenceEvent = invoicePdfBlobId
-          ? `${selectedInvoiceFile ? "Invoice file" : "Invoice PDF"} and evidence package uploaded to Walrus Testnet`
-          : "Evidence package uploaded to Walrus Testnet";
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Walrus upload failed";
-        evidenceEvent = `Walrus upload skipped: ${message}`;
-        notify("Evidence upload failed; receivable was still prepared.");
-      }
+    try {
+      const upload = await uploadEvidencePackage(evidencePackage);
+      blobId = upload.blobId;
+      blobObjectId = upload.blobObjectId;
+      evidenceEvent = invoicePdfBlobId
+        ? `${selectedInvoiceFile ? "Invoice file" : "Invoice PDF"} and evidence package uploaded to Walrus Testnet`
+        : "Evidence package uploaded to Walrus Testnet";
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Walrus upload failed";
+      evidenceEvent = `Walrus upload skipped: ${message}`;
+      notify("Evidence upload failed; receivable was still prepared.");
     }
 
     const dueDateMs = new Date(dueDate).getTime();
@@ -1806,15 +1801,15 @@ function CreateReceivable({
             <input name="amount" type="hidden" value={lineItemsTotal} />
             <input name="lineItems" type="hidden" value={JSON.stringify(lineItems)} />
           </div>
-          <label className="flex items-start gap-3 rounded-xl border border-line bg-paperalt/30 p-4 md:col-span-2">
-            <input className="mt-1.5 h-4 w-4 accent-moss rounded border-line" name="uploadEvidence" type="checkbox" />
+          <div className="flex items-start gap-3 rounded-xl border border-moss/20 bg-mosssoft/35 p-4 md:col-span-2">
+            <DatabaseZap className="mt-1 shrink-0 text-moss" size={18} />
             <span>
-              <span className="block text-xs font-bold text-ink font-sans uppercase tracking-wider">Publish evidence package</span>
+              <span className="block text-xs font-bold text-ink font-sans uppercase tracking-wider">Walrus evidence required</span>
               <span className="mt-1 block text-xs leading-5 text-inksecondary">
-                Creates a retrievable evidence record for buyer review. Leave off to prepare the receivable without upload.
+                Every receivable uploads its evidence package to Walrus Testnet so buyers can review a retrievable record.
               </span>
             </span>
-          </label>
+          </div>
           <label className="grid gap-2 md:col-span-2">
             <span className="text-xs font-bold text-ink font-sans uppercase tracking-wider">Invoice file</span>
             <input
@@ -1824,7 +1819,7 @@ function CreateReceivable({
               type="file"
             />
             <span className="text-[11px] leading-5 text-inksecondary">
-              Optional. If evidence publishing is enabled, this file is uploaded to Walrus and linked from the receivable evidence package.
+              Optional. This file, or a generated invoice PDF, is uploaded to Walrus and linked from the evidence package.
             </span>
           </label>
         </div>

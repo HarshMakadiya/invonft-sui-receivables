@@ -175,8 +175,9 @@ on final invoice payment.
 ## Walrus Proof
 
 For local development, the app can keep a placeholder blob when Walrus upload is
-skipped or unavailable. For submission, create at least one invoice with a real
-Walrus upload and verify the aggregator link from the invoice inspector.
+unavailable. The create flow always attempts Walrus upload. For submission,
+create at least one invoice with a real Walrus upload and verify the aggregator
+link from the invoice inspector.
 
 Walrus Testnet blobs are time-bound. The frontend uploads with
 `VITE_WALRUS_STORAGE_EPOCHS` epochs, defaulting to `5`. If an older invoice shows
