@@ -34,7 +34,11 @@ import { evidence, wallets } from "./data/mockReceivables";
 import { appMode, isProductionMode } from "./lib/appMode";
 import { buildEvidencePackage } from "./lib/evidencePackage";
 import { isRealSuiId, isRealTransactionDigest, isRealWalrusBlobId, suiObjectUrl, suiTransactionUrl } from "./lib/explorer";
-import { formatCompactSui, formatSui, shortAddress } from "./lib/format";
+import { fromBase64 } from "@mysten/sui/utils";
+import { paymentCoin, roundAmount } from "./lib/coin";
+import { feeBreakdown } from "./lib/platform";
+import { isSponsorshipEnabled, requestSponsorship } from "./lib/sponsor";
+import { compactNumber, formatToken, shortAddress } from "./lib/format";
 import { healthScore } from "./lib/healthScore";
 import { createInvoicePdfBlob, downloadInvoicePdf } from "./lib/invoicePdf";
 import { fetchReceivablesFromIndexer, isIndexerConfigured, syncReceivableWithIndexer } from "./lib/receivableIndex";
@@ -256,9 +260,9 @@ function App() {
     }
 
     try {
-      const result = await dAppKit.signAndExecuteTransaction({
-        transaction: buildTransaction(),
-      });
+      const result = isSponsorshipEnabled()
+        ? await executeSponsoredTransaction(buildTransaction())
+        : await dAppKit.signAndExecuteTransaction({ transaction: buildTransaction() });
 
       if (result.FailedTransaction) {
         throw new Error(result.FailedTransaction.status.error?.message ?? "Transaction failed");
@@ -276,6 +280,20 @@ function App() {
     }
   }
 
+  async function executeSponsoredTransaction(transaction: ReturnType<typeof buildCreateReceivableTx>) {
+    // 1. Serialize just the transaction commands (no gas/sender yet).
+    const kindBytes = await transaction.build({ client: suiClient, onlyTransactionKind: true });
+    // 2. Backend sponsor sets itself as gas owner, attaches its SUI, and signs.
+    const sponsored = await requestSponsorship(activeAddress, kindBytes);
+    // 3. The connected wallet signs the exact sponsored bytes (authorizing the action).
+    const { signature: userSignature } = await dAppKit.signTransaction({ transaction: sponsored.txBytes });
+    // 4. Execute with both signatures (user + sponsor).
+    return suiClient.executeTransaction({
+      transaction: fromBase64(sponsored.txBytes),
+      signatures: [userSignature, sponsored.sponsorSignature],
+    });
+  }
+
   async function findCreatedObjectId(digest: string, expectedType: string) {
     try {
       const result = await suiClient.waitForTransaction({
@@ -289,7 +307,9 @@ function App() {
       }
 
       const createdObjects = result.Transaction.effects.changedObjects.filter((object) => object.idOperation === "Created");
-      const createdInvoice = createdObjects.find((object) => result.Transaction.objectTypes[object.objectId] === expectedType);
+      const createdInvoice = createdObjects.find((object) =>
+        (result.Transaction.objectTypes[object.objectId] ?? "").startsWith(expectedType),
+      );
 
       return createdInvoice?.objectId;
     } catch (error) {
@@ -307,7 +327,7 @@ function App() {
   }
 
   function financingPriceFor(invoice: Invoice, discountBps: number) {
-    return Math.round(invoice.amount * ((10_000 - discountBps) / 10_000) * 1_000_000_000) / 1_000_000_000;
+    return roundAmount(invoice.amount * ((10_000 - discountBps) / 10_000));
   }
 
   function requestListInvoice(invoice: Invoice) {
@@ -470,7 +490,7 @@ function App() {
         digest
           ? `Pay transaction submitted: ${shortAddress(digest.digest)}`
           : shouldUseDemoFallback(invoice)
-            ? `Paid ${formatSui(invoice.amount)} to ${shortAddress(invoice.paymentRecipient)}`
+            ? `Paid ${formatToken(invoice.amount)} to ${shortAddress(invoice.paymentRecipient)}`
             : "Pay transaction skipped",
       ],
     });
@@ -1010,7 +1030,7 @@ function Dashboard({
           <Metric accent="mint" icon={<ReceiptText />} label="Receivables" value={String(invoices.length)} />
           <Metric accent="aqua" icon={<Store />} label="Listed" value={String(stats.listed)} />
           <Metric accent="sun" icon={<Banknote />} label="Financed" value={String(stats.financed)} />
-          <Metric accent="coral" icon={<LineChart />} label="Volume" value={formatCompactSui(stats.volume)} />
+          <Metric accent="coral" icon={<LineChart />} label="Volume" value={compactNumber(stats.volume)} unit={paymentCoin.symbol} />
         </div>
 
         <div className="overflow-hidden rounded-[1.25rem] border border-line bg-lead shadow-flat">
@@ -1143,7 +1163,7 @@ function PaymentRoute({ invoice }: { invoice: Invoice }) {
         <div className="ml-5.5 h-6 w-0.5 bg-line" />
         <RouteNode label={recipientIsBuyer ? "Payment recipient: buyer" : "Payment recipient: issuer"} value={shortAddress(invoice.paymentRecipient)} tone={recipientIsBuyer ? "aqua" : "sun"} />
         <div className="ml-5.5 h-6 w-0.5 bg-line" />
-        <RouteNode label="Payer completes settlement" value={`${formatSui(invoice.amount)} settlement`} tone="coral" />
+        <RouteNode label="Payer completes settlement" value={`${formatToken(invoice.amount)} settlement`} tone="coral" />
       </div>
       <div className="mt-5 rounded-xl border border-moss/15 bg-mosssoft/40 p-3.5">
         <div className="flex items-center justify-between gap-3">
@@ -1276,7 +1296,7 @@ function InvoiceInspector({
             </div>
             <div className="flex justify-between border-b border-linesoft pb-1">
               <span className="text-inkmuted font-mono">Amount</span>
-              <span className="text-moss font-bold text-xs font-numbers">{formatSui(invoice.amount)}</span>
+              <span className="text-moss font-bold text-xs font-numbers">{formatToken(invoice.amount)}</span>
             </div>
             <div className="flex justify-between border-b border-linesoft pb-1">
               <span className="text-inkmuted font-mono">Due Date</span>
@@ -1590,7 +1610,7 @@ function InvoiceRow({
           {invoice.clientName} · {invoice.description}
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
-          <MiniChip selected={selected}>{formatSui(invoice.amount)}</MiniChip>
+          <MiniChip selected={selected}>{formatToken(invoice.amount)}</MiniChip>
           <MiniChip selected={selected}>Audit {health.score}/100</MiniChip>
           <MiniChip selected={selected}>Recipient {shortAddress(invoice.paymentRecipient)}</MiniChip>
         </div>
@@ -1763,7 +1783,7 @@ function CreateReceivable({
                     min="0"
                     onChange={(event) => updateLineItem(index, { unitPrice: Number(event.target.value) })}
                     step="0.01"
-                    title="Unit price in SUI"
+                    title={`Unit price in ${paymentCoin.symbol}`}
                     type="number"
                     value={item.unitPrice}
                   />
@@ -1781,7 +1801,7 @@ function CreateReceivable({
             </div>
             <div className="flex items-center justify-between rounded-xl border border-line bg-paperalt/40 px-4 py-3">
               <span className="text-[11px] uppercase tracking-wider text-inkmuted font-poppins font-semibold">Invoice total</span>
-              <span className="text-sm font-bold text-ink font-numbers">{formatSui(lineItemsTotal)}</span>
+              <span className="text-sm font-bold text-ink font-numbers">{formatToken(lineItemsTotal)}</span>
             </div>
             <input name="amount" type="hidden" value={lineItemsTotal} />
             <input name="lineItems" type="hidden" value={JSON.stringify(lineItems)} />
@@ -1850,10 +1870,9 @@ function ListReceivableModal({
   const [discount, setDiscount] = useState("10");
   const discountPercent = Number(discount);
   const isValidDiscount = Number.isFinite(discountPercent) && discountPercent >= 0 && discountPercent < 100;
-  const buyerPrice = isValidDiscount
-    ? Math.round(invoice.amount * ((100 - discountPercent) / 100) * 1_000_000_000) / 1_000_000_000
-    : 0;
+  const buyerPrice = isValidDiscount ? roundAmount(invoice.amount * ((100 - discountPercent) / 100)) : 0;
   const isValidPrice = buyerPrice > 0 && buyerPrice <= invoice.amount;
+  const fee = feeBreakdown(buyerPrice);
   const presetDiscounts = [0, 5, 10, 15];
 
   useEffect(() => {
@@ -1901,8 +1920,8 @@ function ListReceivableModal({
 
         <div className="mt-5 grid gap-3 rounded-2xl border border-line bg-paperalt/35 p-4">
           <div className="grid grid-cols-2 gap-3">
-            <SmallStat label="Face value" value={formatSui(invoice.amount)} />
-            <SmallStat label="Buyer pays" value={isValidPrice ? formatSui(buyerPrice) : "--"} />
+            <SmallStat label="Face value" value={formatToken(invoice.amount)} />
+            <SmallStat label="Buyer pays" value={isValidPrice ? formatToken(buyerPrice) : "--"} />
           </div>
           <label className="grid gap-2">
             <span className="text-xs font-bold uppercase tracking-wider text-ink font-poppins font-semibold">Buyer discount</span>
@@ -1936,13 +1955,31 @@ function ListReceivableModal({
               </button>
             ))}
           </div>
+          {isValidPrice && (
+            <div className="grid gap-1.5 rounded-xl border border-line bg-lead px-3 py-2.5">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-inksecondary">Platform fee ({fee.percent}%)</span>
+                <span className="font-bold text-ink font-numbers">{formatToken(fee.fee)}</span>
+              </div>
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-inksecondary">Issuer receives</span>
+                <span className="font-bold text-ink font-numbers">{formatToken(fee.issuerNet)}</span>
+              </div>
+              <div className="flex items-center justify-between gap-3 border-t border-line pt-1.5 text-[10px]">
+                <span className="text-inkmuted font-poppins">Fee routes to</span>
+                <span className="truncate font-mono text-inksecondary" title={fee.recipient}>
+                  {shortAddress(fee.recipient)}
+                </span>
+              </div>
+            </div>
+          )}
           {!isValidDiscount || !isValidPrice ? (
             <p className="text-[11px] leading-5 text-coral">
               Enter a discount from 0 up to less than 100. Buyer price must be greater than 0 and no more than face value.
             </p>
           ) : (
             <p className="text-[11px] leading-5 text-inksecondary">
-              Buyer receives the right to collect {formatSui(invoice.amount)} later by paying {formatSui(buyerPrice)} now.
+              Buyer receives the right to collect {formatToken(invoice.amount)} later by paying {formatToken(buyerPrice)} now.
             </p>
           )}
         </div>
@@ -2009,11 +2046,20 @@ function Marketplace({
                 <FinancePill status={invoice.financingStatus} />
               </div>
               <div className="mt-5 grid grid-cols-3 gap-2">
-                <SmallStat label="Face value" value={formatSui(invoice.amount)} />
-                <SmallStat label="Buy price" value={formatSui(invoice.financingPrice)} />
+                <SmallStat label="Face value" value={formatToken(invoice.amount)} />
+                <SmallStat label="Buy price" value={formatToken(invoice.financingPrice)} />
                 <SmallStat label="Discount" value={`${Math.round((1 - invoice.financingPrice / invoice.amount) * 100)}%`} />
               </div>
-              <div className="mt-5 flex gap-2">
+              <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-line bg-lead px-3 py-2 text-[10px]">
+                <span className="text-inkmuted font-poppins">
+                  Platform fee {feeBreakdown(invoice.financingPrice).percent}% ·{" "}
+                  {formatToken(feeBreakdown(invoice.financingPrice).fee)}
+                </span>
+                <span className="truncate font-mono text-inksecondary" title={feeBreakdown(invoice.financingPrice).recipient}>
+                  → {shortAddress(feeBreakdown(invoice.financingPrice).recipient)}
+                </span>
+              </div>
+              <div className="mt-4 flex gap-2">
                 <button
                   className="rounded-xl border border-line bg-lead hover:bg-paperalt/45 text-ink px-4 py-3 text-xs font-bold transition-all duration-150 shadow-flat"
                   onClick={() => onSelect(invoice.id)}
@@ -2062,7 +2108,7 @@ function Portfolio({
     <section className="grid gap-5">
       <div className="grid gap-4 sm:grid-cols-3">
         <Metric accent="mint" icon={<WalletCards />} label="Owned rights" value={String(owned.length)} />
-        <Metric accent="aqua" icon={<Landmark />} label="Expected settlement" value={formatSui(expectedSettlement)} />
+        <Metric accent="aqua" icon={<Landmark />} label="Expected settlement" value={formatToken(expectedSettlement)} />
         <Metric accent="sun" icon={<Clock3 />} label={isProductionMode ? "Connected wallet" : "Current role"} value={isProductionMode ? (activeAddress ? shortAddress(activeAddress) : "Connect wallet") : walletLabel} />
       </div>
       <div className="rounded-[1.25rem] border border-line bg-[#FFFDF7] p-5 shadow-flat md:p-7">
@@ -2078,7 +2124,7 @@ function Portfolio({
                   </div>
                   <div className="flex gap-2">
                     <StatusPill status={invoice.status} />
-                    <MiniChip>{formatSui(invoice.amount)}</MiniChip>
+                    <MiniChip>{formatToken(invoice.amount)}</MiniChip>
                   </div>
                 </div>
               </div>
@@ -2181,7 +2227,19 @@ function MobileNav({ page, onChange }: { page: Page; onChange: (page: Page) => v
   );
 }
 
-function Metric({ accent, icon, label, value }: { accent: "mint" | "aqua" | "sun" | "coral"; icon: React.ReactNode; label: string; value: string }) {
+function Metric({
+  accent,
+  icon,
+  label,
+  value,
+  unit,
+}: {
+  accent: "mint" | "aqua" | "sun" | "coral";
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  unit?: string;
+}) {
   const style = {
     mint: "bg-mosssoft text-moss border-moss/25",
     aqua: "bg-mosssoft/40 text-aqua border-aqua/25",
@@ -2192,8 +2250,11 @@ function Metric({ accent, icon, label, value }: { accent: "mint" | "aqua" | "sun
     <div className="flex min-h-[92px] items-center gap-3 rounded-[1.1rem] border border-line bg-lead p-3.5 shadow-flat transition-all duration-300 hover:border-moss/40">
       <div className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl border [&>svg]:h-5 [&>svg]:w-5 ${style}`}>{icon}</div>
       <div className="min-w-0 flex-1">
-        <p className="whitespace-nowrap text-[9px] font-bold uppercase tracking-[0.12em] text-inkmuted font-poppins font-semibold">{label}</p>
-        <p className="mt-1 whitespace-nowrap text-2xl font-bold tracking-tight text-ink font-numbers">{value}</p>
+        <p className="truncate text-[9px] font-bold uppercase tracking-[0.12em] text-inkmuted font-poppins font-semibold">{label}</p>
+        <p className="mt-1 flex items-baseline gap-1 text-ink">
+          <span className="min-w-0 truncate text-2xl font-bold tracking-tight font-numbers">{value}</span>
+          {unit && <span className="shrink-0 text-sm font-bold text-inkmuted font-numbers">{unit}</span>}
+        </p>
       </div>
     </div>
   );

@@ -14,7 +14,7 @@ module invonft::receivable_tests {
     #[test]
     fun financing_routes_payment_to_buyer() {
         let mut ctx = tx_context::dummy();
-        let mut invoice = receivable::invoice_for_testing(@0x0, @0x0, 100, &mut ctx);
+        let mut invoice = receivable::invoice_for_testing<SUI>(@0x0, @0x0, 100, &mut ctx);
         let config = receivable::platform_config_for_testing(@0x0, @0x9, 100, &mut ctx);
         let financing_payment = coin::mint_for_testing<SUI>(90, &mut ctx);
 
@@ -35,7 +35,7 @@ module invonft::receivable_tests {
     #[test]
     fun cancel_listing_marks_invoice_cancelled() {
         let mut ctx = tx_context::dummy();
-        let mut invoice = receivable::invoice_for_testing(@0x0, @0x0, 100, &mut ctx);
+        let mut invoice = receivable::invoice_for_testing<SUI>(@0x0, @0x0, 100, &mut ctx);
 
         receivable::list_for_financing(&mut invoice, 90, 1000, &mut ctx);
         assert!(receivable::financing_status(&invoice) == FINANCING_LISTED, 0);
@@ -49,7 +49,7 @@ module invonft::receivable_tests {
     #[test]
     fun issuer_can_attach_evidence_before_listing() {
         let mut ctx = tx_context::dummy();
-        let mut invoice = receivable::invoice_for_testing(@0x0, @0x0, 100, &mut ctx);
+        let mut invoice = receivable::invoice_for_testing<SUI>(@0x0, @0x0, 100, &mut ctx);
 
         receivable::attach_evidence(
             &mut invoice,
@@ -76,7 +76,7 @@ module invonft::receivable_tests {
     #[test]
     fun financing_price_can_equal_invoice_amount() {
         let mut ctx = tx_context::dummy();
-        let mut invoice = receivable::invoice_for_testing(@0x0, @0x0, 100, &mut ctx);
+        let mut invoice = receivable::invoice_for_testing<SUI>(@0x0, @0x0, 100, &mut ctx);
 
         receivable::list_for_financing(&mut invoice, 100, 0, &mut ctx);
         assert!(receivable::financing_status(&invoice) == FINANCING_LISTED, 0);
@@ -87,7 +87,7 @@ module invonft::receivable_tests {
     #[expected_failure(abort_code = 5)]
     fun financing_price_must_be_greater_than_zero() {
         let mut ctx = tx_context::dummy();
-        let mut invoice = receivable::invoice_for_testing(@0x0, @0x0, 100, &mut ctx);
+        let mut invoice = receivable::invoice_for_testing<SUI>(@0x0, @0x0, 100, &mut ctx);
 
         receivable::list_for_financing(&mut invoice, 0, 10000, &mut ctx);
         receivable::destroy_for_testing(invoice);
@@ -97,7 +97,7 @@ module invonft::receivable_tests {
     #[expected_failure(abort_code = 9)]
     fun only_configured_payer_can_pay() {
         let mut ctx = tx_context::dummy();
-        let mut invoice = receivable::invoice_for_testing(@0x0, @0x2, 100, &mut ctx);
+        let mut invoice = receivable::invoice_for_testing<SUI>(@0x0, @0x2, 100, &mut ctx);
         let invoice_payment = coin::mint_for_testing<SUI>(100, &mut ctx);
 
         receivable::pay_invoice(&mut invoice, invoice_payment, &mut ctx);

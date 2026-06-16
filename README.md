@@ -102,6 +102,9 @@ VITE_INVO_RECEIVABLE_PACKAGE_ID=0x...
 VITE_INVO_RECEIVABLE_MODULE=receivable
 VITE_INVO_INVOICE_COUNTER_ID=0x...
 VITE_INVO_PLATFORM_CONFIG_ID=0x...
+VITE_INVO_PAYMENT_COIN_TYPE=0x...::usdc::USDC
+VITE_INVO_PAYMENT_COIN_SYMBOL=USDC
+VITE_INVO_PAYMENT_COIN_DECIMALS=6
 VITE_WALRUS_PUBLISHER_URL=https://publisher.walrus-testnet.walrus.space
 VITE_WALRUS_AGGREGATOR_URL=https://aggregator.walrus-testnet.walrus.space
 VITE_WALRUS_STORAGE_EPOCHS=5
@@ -183,6 +186,60 @@ sui client call \
 
 `100 bps` means 1%, `250 bps` means 2.5%, and the contract caps the demo fee at
 `1000 bps` (10%).
+
+## Settlement Coin (USDC)
+
+Receivables are denominated and settled in a stablecoin (**USDC**), while all
+transactions run on the **Sui network** and gas is still paid in SUI. The Move
+package is generic over the coin type `T` (`InvoiceReceivable<T>`,
+`Coin<T>` for buy/pay), and the concrete coin is pinned through
+`VITE_INVO_PAYMENT_COIN_TYPE`. The default targets Sui Testnet USDC (Circle);
+set the mainnet native USDC type for production.
+
+Implications:
+
+- Wallets need **USDC** to buy/pay and a little **SUI** for gas.
+- Amounts use USDC precision (6 decimals). On-chain `*_mist` fields now hold
+  USDC base units (`1 USDC = 1_000_000`).
+- The frontend passes the coin type as a Move type argument on every call, and
+  the indexer derives USDC amounts from chain state.
+
+## Gas Sponsorship (optional)
+
+By default each user's connected wallet pays its own **SUI gas**. With
+sponsorship enabled, a backend **sponsor wallet** pays the gas instead, so end
+users only need **USDC** — they never have to hold SUI.
+
+How it works:
+
+1. The browser builds the transaction (commands only) and posts it to the
+   `functions/api/sponsor.js` Pages Function.
+2. The sponsor (a server-held key) sets itself as gas owner, attaches its SUI,
+   verifies the call targets the InvoNFT package, and signs.
+3. The user's wallet signs the exact sponsored bytes (authorizing their action).
+4. The transaction executes with both signatures.
+
+Setup:
+
+```bash
+# 1. Create + fund a sponsor wallet with SUI (testnet)
+sui client new-address ed25519        # note the address
+sui client switch --address <sponsor>; sui client faucet
+sui keytool export --key-identity <sponsor>   # copy the suiprivkey1... value
+```
+
+- Frontend: set `VITE_INVO_SPONSOR_URL=/api/sponsor`.
+- Cloudflare Pages Function env (server-side secret, never `VITE_`):
+  `SPONSOR_PRIVATE_KEY=suiprivkey1...` and `RECEIVABLE_PACKAGE_ID=0x...`.
+
+Notes:
+
+- The sponsor endpoint only runs under Cloudflare or `wrangler pages dev`, not
+  plain `vite`. Leave `VITE_INVO_SPONSOR_URL` empty for local `vite dev` (the
+  wallet pays gas).
+- The `SPONSOR_PRIVATE_KEY` is a real secret — keep it only in Cloudflare
+  Function env, keep the sponsor wallet topped up with SUI, and the abuse guard
+  restricts sponsorship to the configured `RECEIVABLE_PACKAGE_ID`.
 
 ## Walrus Evidence
 

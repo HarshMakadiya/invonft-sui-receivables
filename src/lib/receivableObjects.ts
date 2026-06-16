@@ -1,5 +1,6 @@
 import type { SuiClientTypes } from "@mysten/sui/client";
 import type { Invoice } from "../types/receivable";
+import { fromBaseUnits } from "./coin";
 
 type SuiObjectWithJson = SuiClientTypes.Object<{ json: true; previousTransaction: true }>;
 
@@ -48,7 +49,7 @@ export function parseInvoiceReceivableObject(object: SuiObjectWithJson): Invoice
     clientName,
     clientEmail: stringField(fields, "client_email", "unknown@example.invalid"),
     description,
-    amount: mistToSui(amountMist),
+    amount: fromBaseUnits(amountMist),
     dueDate: formatDueDate(numberField(fields, "due_date_ms")),
     issuer: addressField(fields, "issuer"),
     payer: addressField(fields, "payer"),
@@ -56,7 +57,7 @@ export function parseInvoiceReceivableObject(object: SuiObjectWithJson): Invoice
     buyer: financingStatus === 2 ? addressField(fields, "payment_recipient") : null,
     status: STATUS_LABELS[status] ?? "PENDING",
     financingStatus: FINANCING_LABELS[financingStatus] ?? "NOT_LISTED",
-    financingPrice: mistToSui(financingPriceMist),
+    financingPrice: fromBaseUnits(financingPriceMist),
     blobId,
     metadataChecksum: stringField(fields, "metadata_checksum", ""),
     txDigest: object.previousTransaction ?? undefined,
@@ -126,10 +127,6 @@ function bigintField(fields: Record<string, unknown>, name: string) {
   }
 
   return 0n;
-}
-
-function mistToSui(value: bigint) {
-  return Number(value) / 1_000_000_000;
 }
 
 function formatDueDate(dueDateMs: number) {

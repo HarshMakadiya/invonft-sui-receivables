@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(perl -0pi -e 's/receivable::invoice_for_testing\\\\\\(/receivable::invoice_for_testing<SUI>\\(/g' move/sources/receivable_tests.move)",
+      "Bash(perl -0pi -e 's/\\\\bmistToSui\\\\b/fromBaseUnits/g' functions/_shared/receivables.js)",
+      "Bash(curl -s https://fullnode.testnet.sui.io:443 -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"sui_getObject\",\"params\":[\"0x9ef6c931f426c5f3676ba56440da8a5fc6a73eac6cc4821a2c0f3fe332d16cd9\",{\"showContent\":true}]}')",
+      "Bash(python3 -m json.tool)"
+    ]
+  }
+}

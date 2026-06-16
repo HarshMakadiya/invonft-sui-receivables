@@ -10,7 +10,7 @@ export type EvidencePackage = {
   clientName: string;
   clientEmail: string;
   description: string;
-  currency: "SUI";
+  currency: string;
   lineItems: EvidenceLineItem[];
   invoicePdfBlobId?: string;
   invoicePdfFileName?: string;

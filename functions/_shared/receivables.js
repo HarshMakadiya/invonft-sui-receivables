@@ -1,5 +1,9 @@
 const DEFAULT_SUI_RPC_URL = "https://fullnode.testnet.sui.io:443";
 
+// Receivables settle in USDC (6 decimals). On-chain `*_mist` fields hold base
+// units of the configured payment coin, so 1 USDC = 1_000_000 base units.
+const PAYMENT_BASE_UNIT = 1_000_000;
+
 export const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -96,11 +100,11 @@ export function invoiceToRowFromChain(invoice, chainInvoice) {
     client_name: invoice.clientName,
     client_email: invoice.clientEmail || null,
     description: invoice.description || null,
-    amount_sui: chainFields ? mistToSui(chainFields.amount_mist) : invoice.amount,
+    amount_sui: chainFields ? fromBaseUnits(chainFields.amount_mist) : invoice.amount,
     due_date: chainFields ? dateFromMs(chainFields.due_date_ms) : invoice.dueDate || null,
     status: chainFields ? statusFromCode(chainFields.status, invoiceStatusLabels) : invoice.status,
     financing_status: financingStatus,
-    financing_price_sui: chainFields ? mistToSui(chainFields.financing_price_mist) : invoice.financingPrice,
+    financing_price_sui: chainFields ? fromBaseUnits(chainFields.financing_price_mist) : invoice.financingPrice,
     metadata_checksum: chainFields?.metadata_checksum ?? invoice.metadataChecksum ?? null,
   };
 }
@@ -176,11 +180,13 @@ export async function fetchSuiReceivableObject(env, objectId) {
 
   const expectedPackageId = env.RECEIVABLE_PACKAGE_ID?.trim() || env.VITE_INVO_RECEIVABLE_PACKAGE_ID?.trim();
   const expectedModule = env.RECEIVABLE_MODULE?.trim() || env.VITE_INVO_RECEIVABLE_MODULE?.trim() || "receivable";
-  const expectedTypeSuffix = `::${expectedModule}::InvoiceReceivable`;
+  // The object is generic over the payment coin, so its type carries a
+  // `<...::usdc::USDC>` argument (e.g. `PKG::receivable::InvoiceReceivable<...>`).
+  const expectedTypeMarker = `::${expectedModule}::InvoiceReceivable`;
 
   const objectType = data.type ?? content.type ?? "";
 
-  if (!String(objectType).endsWith(expectedTypeSuffix)) {
+  if (!String(objectType).includes(expectedTypeMarker)) {
     throw new Error("Sui object is not an InvoiceReceivable.");
   }
 
@@ -338,8 +344,8 @@ function normalizeMoveString(value) {
   return "";
 }
 
-function mistToSui(mist) {
-  return Number(BigInt(mist)) / 1_000_000_000;
+function fromBaseUnits(mist) {
+  return Number(BigInt(mist)) / PAYMENT_BASE_UNIT;
 }
 
 function dateFromMs(ms) {

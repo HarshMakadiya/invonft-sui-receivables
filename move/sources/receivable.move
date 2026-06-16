@@ -4,9 +4,11 @@ module invonft::receivable {
     use sui::coin::{Self, Coin};
     use sui::event;
     use sui::object::{Self, ID, UID};
-    use sui::sui::SUI;
     use sui::transfer;
     use sui::tx_context::{Self, TxContext};
+
+    #[test_only]
+    use sui::sui::SUI;
 
     const STATUS_PENDING: u8 = 0;
     const STATUS_PAID: u8 = 1;
@@ -47,7 +49,12 @@ module invonft::receivable {
         fee_bps: u64,
     }
 
-    public struct InvoiceReceivable has key, store {
+    /// A programmable invoice receivable settled in the stablecoin type `T`
+    /// (the deployed app uses USDC). Every monetary field is denominated in the
+    /// smallest base unit of `T` (USDC has 6 decimals, so 1 USDC = 1_000_000).
+    /// The `*_mist` field names are retained for index/back-compat and now mean
+    /// "base units of the configured payment coin".
+    public struct InvoiceReceivable<phantom T> has key, store {
         id: UID,
         issuer: address,
         payer: address,
@@ -118,7 +125,7 @@ module invonft::receivable {
         });
     }
 
-    public entry fun create_invoice_receivable(
+    public entry fun create_invoice_receivable<T>(
         counter: &mut InvoiceCounter,
         payer: address,
         amount_mist: u64,
@@ -131,7 +138,7 @@ module invonft::receivable {
         let invoice_number = counter.next_invoice_number;
         counter.next_invoice_number = invoice_number + 1;
 
-        let invoice = InvoiceReceivable {
+        let invoice = InvoiceReceivable<T> {
             id: object::new(ctx),
             issuer,
             payer,
@@ -161,8 +168,8 @@ module invonft::receivable {
         transfer::share_object(invoice);
     }
 
-    public entry fun list_for_financing(
-        invoice: &mut InvoiceReceivable,
+    public entry fun list_for_financing<T>(
+        invoice: &mut InvoiceReceivable<T>,
         financing_price_mist: u64,
         financing_discount_bps: u64,
         ctx: &mut TxContext,
@@ -185,10 +192,10 @@ module invonft::receivable {
         });
     }
 
-    public entry fun buy_receivable(
-        invoice: &mut InvoiceReceivable,
+    public entry fun buy_receivable<T>(
+        invoice: &mut InvoiceReceivable<T>,
         config: &PlatformConfig,
-        mut payment: Coin<SUI>,
+        mut payment: Coin<T>,
         ctx: &mut TxContext,
     ) {
         assert!(invoice.status == STATUS_PENDING, E_NOT_PENDING);
@@ -230,9 +237,9 @@ module invonft::receivable {
         config.fee_bps = fee_bps;
     }
 
-    public entry fun pay_invoice(
-        invoice: &mut InvoiceReceivable,
-        payment: Coin<SUI>,
+    public entry fun pay_invoice<T>(
+        invoice: &mut InvoiceReceivable<T>,
+        payment: Coin<T>,
         ctx: &mut TxContext,
     ) {
         assert!(tx_context::sender(ctx) == invoice.payer, E_NOT_PAYER);
@@ -254,7 +261,7 @@ module invonft::receivable {
         });
     }
 
-    public entry fun cancel_listing(invoice: &mut InvoiceReceivable, ctx: &mut TxContext) {
+    public entry fun cancel_listing<T>(invoice: &mut InvoiceReceivable<T>, ctx: &mut TxContext) {
         assert!(tx_context::sender(ctx) == invoice.issuer, E_NOT_ISSUER);
         assert!(invoice.status == STATUS_PENDING, E_NOT_PENDING);
         assert!(invoice.financing_status == FINANCING_LISTED, E_NOT_LISTED);
@@ -264,8 +271,8 @@ module invonft::receivable {
         invoice.financing_discount_bps = 0;
     }
 
-    public entry fun attach_evidence(
-        invoice: &mut InvoiceReceivable,
+    public entry fun attach_evidence<T>(
+        invoice: &mut InvoiceReceivable<T>,
         blob_id: String,
         metadata_checksum: String,
         ctx: &mut TxContext,
@@ -278,7 +285,7 @@ module invonft::receivable {
         invoice.metadata_checksum = metadata_checksum;
     }
 
-    public entry fun mark_overdue(invoice: &mut InvoiceReceivable, clock: &Clock) {
+    public entry fun mark_overdue<T>(invoice: &mut InvoiceReceivable<T>, clock: &Clock) {
         assert!(invoice.status == STATUS_PENDING, E_NOT_PENDING);
         assert!(clock::timestamp_ms(clock) > invoice.due_date_ms, E_DUE_DATE_NOT_PASSED);
 
@@ -289,23 +296,23 @@ module invonft::receivable {
         });
     }
 
-    public fun invoice_number(invoice: &InvoiceReceivable): u64 {
+    public fun invoice_number<T>(invoice: &InvoiceReceivable<T>): u64 {
         invoice.invoice_number
     }
 
-    public fun status(invoice: &InvoiceReceivable): u8 {
+    public fun status<T>(invoice: &InvoiceReceivable<T>): u8 {
         invoice.status
     }
 
-    public fun financing_status(invoice: &InvoiceReceivable): u8 {
+    public fun financing_status<T>(invoice: &InvoiceReceivable<T>): u8 {
         invoice.financing_status
     }
 
-    public fun payment_recipient(invoice: &InvoiceReceivable): address {
+    public fun payment_recipient<T>(invoice: &InvoiceReceivable<T>): address {
         invoice.payment_recipient
     }
 
-    public fun amount_mist(invoice: &InvoiceReceivable): u64 {
+    public fun amount_mist<T>(invoice: &InvoiceReceivable<T>): u64 {
         invoice.amount_mist
     }
 
@@ -318,13 +325,13 @@ module invonft::receivable {
     }
 
     #[test_only]
-    public(package) fun invoice_for_testing(
+    public(package) fun invoice_for_testing<T>(
         issuer: address,
         payer: address,
         amount_mist: u64,
         ctx: &mut TxContext,
-    ): InvoiceReceivable {
-        InvoiceReceivable {
+    ): InvoiceReceivable<T> {
+        InvoiceReceivable<T> {
             id: object::new(ctx),
             issuer,
             payer,
@@ -345,7 +352,7 @@ module invonft::receivable {
     }
 
     #[test_only]
-    public(package) fun destroy_for_testing(invoice: InvoiceReceivable) {
+    public(package) fun destroy_for_testing<T>(invoice: InvoiceReceivable<T>) {
         let InvoiceReceivable {
             id,
             issuer: _,
@@ -396,7 +403,7 @@ module invonft::receivable {
     #[test]
     fun financing_routes_payment_to_buyer() {
         let mut ctx = tx_context::dummy();
-        let mut invoice = invoice_for_testing(@0x0, @0x0, 100, &mut ctx);
+        let mut invoice = invoice_for_testing<SUI>(@0x0, @0x0, 100, &mut ctx);
         let config = platform_config_for_testing(@0x0, @0x9, 100, &mut ctx);
         let financing_payment = coin::mint_for_testing<SUI>(90, &mut ctx);
 
@@ -430,7 +437,7 @@ module invonft::receivable {
     #[expected_failure(abort_code = E_NOT_PAYER)]
     fun only_configured_payer_can_pay() {
         let mut ctx = tx_context::dummy();
-        let mut invoice = invoice_for_testing(@0x0, @0x2, 100, &mut ctx);
+        let mut invoice = invoice_for_testing<SUI>(@0x0, @0x2, 100, &mut ctx);
         let invoice_payment = coin::mint_for_testing<SUI>(100, &mut ctx);
 
         pay_invoice(&mut invoice, invoice_payment, &mut ctx);
@@ -441,7 +448,7 @@ module invonft::receivable {
     #[expected_failure(abort_code = E_ALREADY_PAID)]
     fun paid_invoice_cannot_be_paid_twice() {
         let mut ctx = tx_context::dummy();
-        let mut invoice = invoice_for_testing(@0x0, @0x0, 100, &mut ctx);
+        let mut invoice = invoice_for_testing<SUI>(@0x0, @0x0, 100, &mut ctx);
         let first_payment = coin::mint_for_testing<SUI>(100, &mut ctx);
         let second_payment = coin::mint_for_testing<SUI>(100, &mut ctx);
 

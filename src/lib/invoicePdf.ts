@@ -1,4 +1,5 @@
 import type { Invoice } from "../types/receivable";
+import { paymentCoin } from "./coin";
 
 type InvoicePdfInput = {
   invoiceNumber: string;
@@ -18,7 +19,7 @@ export function createInvoicePdfBlob(input: InvoicePdfInput | Invoice) {
     `Client: ${input.clientName}`,
     `Email: ${input.clientEmail}`,
     `Description: ${input.description}`,
-    `Amount: ${input.amount} SUI`,
+    `Amount: ${input.amount} ${paymentCoin.symbol}`,
     `Due date: ${input.dueDate}`,
     `Issuer: ${input.issuer}`,
     `Payer: ${input.payer}`,

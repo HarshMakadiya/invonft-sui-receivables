@@ -1,3 +1,4 @@
+import { paymentCoin } from "./coin";
 import type { EvidencePackage, EvidencePackageInput } from "../types/evidence";
 
 export async function buildEvidencePackage(input: EvidencePackageInput): Promise<EvidencePackage> {
@@ -21,7 +22,7 @@ export async function buildEvidencePackage(input: EvidencePackageInput): Promise
     clientName: input.clientName,
     clientEmail: input.clientEmail,
     description: input.description,
-    currency: "SUI" as const,
+    currency: paymentCoin.symbol,
     lineItems,
     ...(input.invoicePdfBlobId ? { invoicePdfBlobId: input.invoicePdfBlobId } : {}),
     ...(input.invoicePdfFileName ? { invoicePdfFileName: input.invoicePdfFileName } : {}),
