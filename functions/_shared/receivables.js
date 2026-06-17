@@ -145,7 +145,7 @@ export function validateInvoiceForSync(invoice) {
   return null;
 }
 
-export async function verifySuiTransaction(env, txDigest, objectId) {
+export async function fetchSuiTransaction(env, txDigest) {
   const payload = await suiRpc(env, "sui_getTransactionBlock", [
     txDigest,
     {
@@ -154,13 +154,30 @@ export async function verifySuiTransaction(env, txDigest, objectId) {
       showObjectChanges: true,
     },
   ]);
-  const result = payload.result;
-  if (result?.effects?.status?.status !== "success") {
+  return payload.result;
+}
+
+export function isSuccessfulTransaction(tx) {
+  return tx?.effects?.status?.status === "success";
+}
+
+export function transactionTouchesObject(tx, objectId) {
+  const objectChanges = Array.isArray(tx?.objectChanges) ? tx.objectChanges : [];
+  return objectChanges.some((change) => change.objectId === objectId);
+}
+
+export function transactionHasEvent(tx, eventName) {
+  const events = Array.isArray(tx?.events) ? tx.events : [];
+  return events.some((event) => String(event.type ?? "").endsWith(`::${eventName}`));
+}
+
+export async function verifySuiTransaction(env, txDigest, objectId) {
+  const result = await fetchSuiTransaction(env, txDigest);
+  if (!isSuccessfulTransaction(result)) {
     return false;
   }
 
-  const objectChanges = Array.isArray(result.objectChanges) ? result.objectChanges : [];
-  return objectChanges.some((change) => change.objectId === objectId);
+  return transactionTouchesObject(result, objectId);
 }
 
 export async function fetchSuiReceivableObject(env, objectId) {
@@ -250,6 +267,23 @@ export async function upsertInvoice(env, invoice, chainInvoice) {
 
   const insertedRows = await insertResponse.json();
   return insertedRows[0] ? rowToInvoice(insertedRows[0]) : null;
+}
+
+export async function receivableExists(env, objectId) {
+  const { baseUrl, serviceRoleKey } = getSupabaseConfig(env);
+  const response = await fetch(
+    `${baseUrl}/rest/v1/receivables?select=sui_object_id&sui_object_id=eq.${encodeURIComponent(objectId)}&limit=1`,
+    {
+      headers: supabaseHeaders(serviceRoleKey),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Supabase lookup failed: ${response.status} ${response.statusText}`);
+  }
+
+  const rows = await response.json();
+  return rows.length > 0;
 }
 
 function evidenceFromRow(status, payer, blobId, dueDate) {

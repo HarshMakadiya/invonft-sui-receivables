@@ -1686,9 +1686,7 @@ function CreateReceivable({
   isCreating: boolean;
   onCreate: (event: FormEvent<HTMLFormElement>) => void | Promise<void>;
 }) {
-  const [lineItems, setLineItems] = useState<EvidenceLineItem[]>([
-    { description: "Mobile app design sprint", quantity: 1, unitPrice: 750 },
-  ]);
+  const [lineItems, setLineItems] = useState<EvidenceLineItem[]>([{ description: "", quantity: 1, unitPrice: 0 }]);
 
   const lineItemsTotal = lineItems.reduce(
     (sum, item) => sum + (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0),
@@ -1726,9 +1724,9 @@ function CreateReceivable({
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          <Field label="Client name" name="clientName" defaultValue="Helio Supply" />
-          <Field label="Client email" name="clientEmail" type="email" defaultValue="ap@helio.test" />
-          <Field label="Due date" name="dueDate" type="date" defaultValue="2026-07-30" />
+          <Field label="Client name" name="clientName" placeholder="Client company" />
+          <Field label="Client email" name="clientEmail" type="email" placeholder="client@example.com" />
+          <Field label="Due date" name="dueDate" type="date" />
           <Field
             label="Payer wallet"
             name="payerWallet"
@@ -1740,7 +1738,7 @@ function CreateReceivable({
             <textarea
               className="min-h-24 rounded-xl border border-line bg-paper text-ink px-4 py-3 text-xs outline-none transition placeholder:text-inkmuted/60 focus:border-moss"
               name="description"
-              defaultValue="Mobile app design sprint"
+              placeholder="Describe the invoice work or goods"
               required
             />
           </label>
@@ -2263,7 +2261,7 @@ function Field({
   placeholder,
   type = "text",
 }: {
-  defaultValue: string;
+  defaultValue?: string;
   label: string;
   name: string;
   placeholder?: string;

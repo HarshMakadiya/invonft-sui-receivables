@@ -137,6 +137,28 @@ Functions lets the API reject unrelated Sui objects before syncing the index.
 Walrus URLs are public Testnet endpoints. They are not secrets. Mainnet should
 not use a public unauthenticated publisher.
 
+### Client Invoice Email
+
+Production can notify the entered `clientEmail` after a verified
+`InvoiceCreated` transaction is synced to the index. Email is sent server-side
+from the Cloudflare Pages Function, so the provider key is never exposed to the
+browser.
+
+Server-side Cloudflare variables:
+
+```bash
+RESEND_API_KEY=re_...
+INVOICE_EMAIL_FROM="InvoNFT <invoices@your-domain.com>"
+INVOICE_REPLY_TO=support@your-domain.com
+INVO_PUBLIC_APP_URL=https://invonft-sui-receivables.pages.dev
+```
+
+If `RESEND_API_KEY` or `INVOICE_EMAIL_FROM` is missing, invoice creation still
+works and the notification is skipped. Emails are only attempted for the first
+successful index sync of an `InvoiceCreated` transaction; rejected wallet
+prompts, failed transactions, list/buy/pay actions, and already-indexed invoices
+do not send client email.
+
 In development, the current action buttons run in hybrid mode:
 
 - Without a connected wallet and contract env vars, they update the Supabase-backed demo state.

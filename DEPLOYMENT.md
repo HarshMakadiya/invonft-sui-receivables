@@ -32,11 +32,19 @@ Cloudflare Pages Functions server-side variables:
 - `SUI_RPC_URL=https://fullnode.testnet.sui.io:443`
 - `RECEIVABLE_PACKAGE_ID`
 - `RECEIVABLE_MODULE=receivable`
+- `RESEND_API_KEY` optional, for client invoice email
+- `INVOICE_EMAIL_FROM` optional, required when `RESEND_API_KEY` is set
+- `INVOICE_REPLY_TO` optional
+- `INVO_PUBLIC_APP_URL` optional, used for email invoice links
 
 `SUPABASE_SERVICE_ROLE_KEY` is secret. Store it only as a Cloudflare Pages
 environment variable for Functions. Do not add it to any `VITE_*` variable.
 `RECEIVABLE_PACKAGE_ID` is public, but setting it server-side lets the Function
 reject objects that do not belong to the deployed InvoNFT package.
+
+`RESEND_API_KEY` is also secret. The email notification path runs only after a
+verified `InvoiceCreated` transaction is synced, and is skipped when email env is
+not configured.
 
 ## Sui Testnet
 

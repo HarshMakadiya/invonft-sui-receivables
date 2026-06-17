@@ -22,7 +22,7 @@ export const paymentCoin = {
 
 const baseUnitFactor = 10 ** paymentCoin.decimals;
 
-/** Convert a human amount (e.g. 750 USDC) to on-chain base units (u64). */
+/** Convert a human amount (e.g. 1 USDC) to on-chain base units (u64). */
 export function toBaseUnits(value: number): bigint {
   return BigInt(Math.round(value * baseUnitFactor));
 }
