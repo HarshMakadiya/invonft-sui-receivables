@@ -2,6 +2,8 @@ import { Transaction, coinWithBalance } from "@mysten/sui/transactions";
 import { getReceivableTarget, receivableContract } from "./receivableContract";
 import { paymentCoin, toBaseUnits } from "./coin";
 
+const SUI_CLOCK_OBJECT_ID = "0x6";
+
 type CreateReceivableInput = {
   payer: string;
   amountSui: number;
@@ -42,6 +44,16 @@ export function buildCreateReceivableTx(input: CreateReceivableInput) {
       tx.pure.string(input.blobId),
       tx.pure.string(input.metadataChecksum),
     ],
+  });
+  return tx;
+}
+
+export function buildAcknowledgeInvoiceTx(input: ObjectInput) {
+  const tx = new Transaction();
+  tx.moveCall({
+    target: getReceivableTarget("acknowledge_invoice"),
+    typeArguments: coinTypeArgs,
+    arguments: [tx.object(input.invoiceObjectId), tx.object(SUI_CLOCK_OBJECT_ID)],
   });
   return tx;
 }
@@ -97,7 +109,7 @@ export function buildMarkOverdueTx(input: ObjectInput) {
   tx.moveCall({
     target: getReceivableTarget("mark_overdue"),
     typeArguments: coinTypeArgs,
-    arguments: [tx.object(input.invoiceObjectId), tx.object("0x6")],
+    arguments: [tx.object(input.invoiceObjectId), tx.object(SUI_CLOCK_OBJECT_ID)],
   });
   return tx;
 }

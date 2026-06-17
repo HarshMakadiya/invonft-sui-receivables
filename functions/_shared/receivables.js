@@ -75,6 +75,8 @@ export function rowToInvoice(row) {
     blobId,
     metadataChecksum: row.metadata_checksum ?? undefined,
     txDigest: row.tx_digest ?? undefined,
+    acknowledgedAtMs: row.acknowledged_at_ms ? Number(row.acknowledged_at_ms) : undefined,
+    acknowledgedTx: row.acknowledged_tx ?? undefined,
     evidence: evidenceFromRow(status, payer, blobId, row.due_date),
     events: ["Loaded from verified production index"],
   };
@@ -106,6 +108,8 @@ export function invoiceToRowFromChain(invoice, chainInvoice) {
     financing_status: financingStatus,
     financing_price_sui: chainFields ? fromBaseUnits(chainFields.financing_price_mist) : invoice.financingPrice,
     metadata_checksum: chainFields?.metadata_checksum ?? invoice.metadataChecksum ?? null,
+    acknowledged_at_ms: chainFields ? Number(chainFields.acknowledged_at_ms) : invoice.acknowledgedAtMs ?? null,
+    acknowledged_tx: invoice.acknowledgedTx ?? null,
   };
 }
 
@@ -227,6 +231,7 @@ export async function fetchSuiReceivableObject(env, objectId) {
       payer: normalizeAddress(fields.payer),
       payment_recipient: normalizeAddress(fields.payment_recipient),
       status: normalizeU8(fields.status),
+      acknowledged_at_ms: normalizeU64(fields.acknowledged_at_ms),
     },
   };
 }

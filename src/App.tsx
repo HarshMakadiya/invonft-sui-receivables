@@ -44,6 +44,7 @@ import { createInvoicePdfBlob, downloadInvoicePdf } from "./lib/invoicePdf";
 import { fetchReceivablesFromIndexer, isIndexerConfigured, syncReceivableWithIndexer } from "./lib/receivableIndex";
 import { getReceivableContractReadiness, receivableContract } from "./lib/receivableContract";
 import {
+  buildAcknowledgeInvoiceTx,
   buildBuyReceivableTx,
   buildCreateReceivableTx,
   buildListForFinancingTx,
@@ -101,8 +102,21 @@ function isSuiAddress(value: string) {
   return /^0x[0-9a-fA-F]{64}$/.test(value);
 }
 
+function isAcknowledged(invoice: Invoice) {
+  return (invoice.acknowledgedAtMs ?? 0) > 0;
+}
+
+// The payer must acknowledge the debt on-chain before it can be financed.
+function canAcknowledgeInvoice(invoice: Invoice, walletRole: WalletRole, activeAddress: string) {
+  if (invoice.status !== "PENDING" || isAcknowledged(invoice)) {
+    return false;
+  }
+
+  return isProductionMode ? sameAddress(activeAddress, invoice.payer) : walletRole === "payer";
+}
+
 function canListInvoice(invoice: Invoice, walletRole: WalletRole, activeAddress: string) {
-  if (invoice.status !== "PENDING" || invoice.financingStatus !== "NOT_LISTED") {
+  if (invoice.status !== "PENDING" || invoice.financingStatus !== "NOT_LISTED" || !isAcknowledged(invoice)) {
     return false;
   }
 
@@ -331,6 +345,42 @@ function App() {
 
   function financingPriceFor(invoice: Invoice, discountBps: number) {
     return roundAmount(invoice.amount * ((10_000 - discountBps) / 10_000));
+  }
+
+  async function acknowledgeInvoice(invoice: Invoice) {
+    if (isProductionMode && !sameAddress(activeAddress, invoice.payer)) {
+      notify("Connect the payer wallet to acknowledge this invoice.");
+      return;
+    }
+
+    const isLiveInvoice = hasRealObjectId(invoice);
+    const digest = isLiveInvoice
+      ? await trySubmitTransaction("Acknowledge transaction", () =>
+        buildAcknowledgeInvoiceTx({
+          invoiceObjectId: invoice.objectId,
+        }),
+      )
+      : null;
+
+    if (isLiveInvoice && !digest) {
+      return;
+    }
+
+    updateInvoice({
+      ...invoice,
+      acknowledgedAtMs: Date.now(),
+      acknowledgedTx: digest?.digest ?? invoice.acknowledgedTx,
+      txDigest: digest?.digest ?? invoice.txDigest,
+      events: [
+        ...invoice.events,
+        digest
+          ? `Payer acknowledged invoice: ${shortAddress(digest.digest)}`
+          : shouldUseDemoFallback(invoice)
+            ? "Payer acknowledged the invoice"
+            : "Acknowledge transaction skipped",
+      ],
+    });
+    notify("Invoice acknowledged by payer");
   }
 
   function requestListInvoice(invoice: Invoice) {
@@ -781,6 +831,7 @@ function App() {
               onList={requestListInvoice}
               onMarkOverdue={markInvoiceOverdue}
               onPay={payInvoice}
+              onAcknowledge={acknowledgeInvoice}
               onCreate={() => navigate("create")}
               onQuery={setQuery}
               onSelect={selectInvoice}
@@ -1000,6 +1051,7 @@ function Dashboard({
   onList,
   onMarkOverdue,
   onPay,
+  onAcknowledge,
   onQuery,
   onSelect,
   onShowMarketplace,
@@ -1015,6 +1067,7 @@ function Dashboard({
   onList: (invoice: Invoice) => void;
   onMarkOverdue: (invoice: Invoice) => void;
   onPay: (invoice: Invoice) => void;
+  onAcknowledge: (invoice: Invoice) => void;
   onQuery: (value: string) => void;
   onSelect: (id: string) => void;
   onShowMarketplace: () => void;
@@ -1091,6 +1144,7 @@ function Dashboard({
                   onBuy={onBuy}
                   onList={onList}
                   onPay={onPay}
+                  onAcknowledge={onAcknowledge}
                   onSelect={onSelect}
                 />
               ))
@@ -1106,7 +1160,7 @@ function Dashboard({
       </section>
 
       {selectedInvoice ? (
-        <InvoiceInspector activeAddress={activeAddress} invoice={selectedInvoice} walletRole={walletRole} onBuy={onBuy} onList={onList} onMarkOverdue={onMarkOverdue} onPay={onPay} />
+        <InvoiceInspector activeAddress={activeAddress} invoice={selectedInvoice} walletRole={walletRole} onBuy={onBuy} onList={onList} onMarkOverdue={onMarkOverdue} onPay={onPay} onAcknowledge={onAcknowledge} />
       ) : (
         <EmptyInspector />
       )}
@@ -1203,6 +1257,7 @@ function InvoiceInspector({
   onList,
   onMarkOverdue,
   onPay,
+  onAcknowledge,
 }: {
   activeAddress: string;
   invoice: Invoice;
@@ -1211,6 +1266,7 @@ function InvoiceInspector({
   onList: (invoice: Invoice) => void;
   onMarkOverdue: (invoice: Invoice) => void;
   onPay: (invoice: Invoice) => void;
+  onAcknowledge: (invoice: Invoice) => void;
 }) {
   const [evidencePreview, setEvidencePreview] = useState<EvidencePackage | null>(null);
   const [evidenceError, setEvidenceError] = useState("");
@@ -1339,7 +1395,7 @@ function InvoiceInspector({
         </div>
 
         <div className="mt-5 grid grid-cols-2 gap-2">
-          <ActionButton activeAddress={activeAddress} invoice={invoice} walletRole={walletRole} onBuy={onBuy} onList={onList} onPay={onPay} />
+          <ActionButton activeAddress={activeAddress} invoice={invoice} walletRole={walletRole} onBuy={onBuy} onList={onList} onPay={onPay} onAcknowledge={onAcknowledge} />
           <VerificationLink
             disabled={!hasWalrusBlob}
             href={hasWalrusBlob ? evidenceUrl(invoice.blobId) : undefined}
@@ -1437,6 +1493,20 @@ function InvoiceInspector({
             helper={hasWalrusBlob ? shortAddress(invoice.blobId) : "Evidence package not published"}
             href={hasWalrusBlob ? evidenceUrl(invoice.blobId) : undefined}
             label="Walrus evidence"
+          />
+          <VerificationRow
+            disabled={!invoice.acknowledgedTx || !isRealTransactionDigest(invoice.acknowledgedTx)}
+            helper={
+              isAcknowledged(invoice)
+                ? `Acknowledged ${new Date(invoice.acknowledgedAtMs ?? 0).toISOString().slice(0, 10)}`
+                : "Awaiting payer acknowledgement"
+            }
+            href={
+              invoice.acknowledgedTx && isRealTransactionDigest(invoice.acknowledgedTx)
+                ? suiTransactionUrl(invoice.acknowledgedTx)
+                : undefined
+            }
+            label="Payer acknowledgement"
           />
         </div>
       </div>
@@ -1581,6 +1651,7 @@ function InvoiceRow({
   onBuy,
   onList,
   onPay,
+  onAcknowledge,
   onSelect,
 }: {
   activeAddress: string;
@@ -1590,6 +1661,7 @@ function InvoiceRow({
   onBuy: (invoice: Invoice) => void;
   onList: (invoice: Invoice) => void;
   onPay: (invoice: Invoice) => void;
+  onAcknowledge: (invoice: Invoice) => void;
   onSelect: (id: string) => void;
 }) {
   const health = healthScore(invoice);
@@ -1613,7 +1685,7 @@ function InvoiceRow({
           <MiniChip selected={selected}>Recipient {shortAddress(invoice.paymentRecipient)}</MiniChip>
         </div>
       </button>
-      <ActionButton activeAddress={activeAddress} invoice={invoice} walletRole={walletRole} onBuy={onBuy} onList={onList} onPay={onPay} />
+      <ActionButton activeAddress={activeAddress} invoice={invoice} walletRole={walletRole} onBuy={onBuy} onList={onList} onPay={onPay} onAcknowledge={onAcknowledge} />
     </article>
   );
 }
@@ -1625,6 +1697,7 @@ function ActionButton({
   onBuy,
   onList,
   onPay,
+  onAcknowledge,
 }: {
   activeAddress: string;
   invoice: Invoice;
@@ -1632,11 +1705,23 @@ function ActionButton({
   onBuy: (invoice: Invoice) => void;
   onList: (invoice: Invoice) => void;
   onPay: (invoice: Invoice) => void;
+  onAcknowledge: (invoice: Invoice) => void;
 }) {
   if (invoice.status !== "PENDING") {
     return (
       <button disabled className="rounded-xl bg-paperalt/40 border border-line px-4 py-3 text-xs font-bold text-inkmuted/50">
         Settled
+      </button>
+    );
+  }
+
+  if (canAcknowledgeInvoice(invoice, walletRole, activeAddress)) {
+    return (
+      <button
+        className="rounded-xl bg-sun px-4 py-3 text-xs font-bold text-lead shadow-flat hover:bg-sun/80 transition hover:-translate-y-0.5 duration-150"
+        onClick={() => onAcknowledge(invoice)}
+      >
+        Acknowledge invoice
       </button>
     );
   }

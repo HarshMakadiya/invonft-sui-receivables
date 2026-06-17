@@ -124,9 +124,16 @@ create table if not exists public.receivables (
   financing_status text not null default 'NOT_LISTED',
   financing_price_sui numeric not null default 0,
   metadata_checksum text,
+  acknowledged_at_ms bigint,
+  acknowledged_tx text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Migration for an existing `receivables` table (adds payer-acknowledgement fields):
+-- alter table public.receivables
+--   add column if not exists acknowledged_at_ms bigint,
+--   add column if not exists acknowledged_tx text;
 
 alter table public.receivables enable row level security;
 

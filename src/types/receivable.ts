@@ -35,6 +35,8 @@ export type Invoice = {
   blobObjectId?: string;
   metadataChecksum?: string;
   txDigest?: string;
+  acknowledgedAtMs?: number;
+  acknowledgedTx?: string;
   evidence: Evidence;
   events: string[];
 };

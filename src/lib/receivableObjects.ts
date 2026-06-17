@@ -61,6 +61,7 @@ export function parseInvoiceReceivableObject(object: SuiObjectWithJson): Invoice
     blobId,
     metadataChecksum: stringField(fields, "metadata_checksum", ""),
     txDigest: object.previousTransaction ?? undefined,
+    acknowledgedAtMs: numberField(fields, "acknowledged_at_ms"),
     evidence: {
       invoicePdf: Boolean(blobId),
       lineItemsMatch: true,

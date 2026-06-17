@@ -18,6 +18,8 @@ type ReceivableRow = {
   financing_status: FinancingStatus;
   financing_price_sui: number;
   metadata_checksum: string | null;
+  acknowledged_at_ms?: number | null;
+  acknowledged_tx?: string | null;
   created_at?: string;
   updated_at?: string;
 };
@@ -120,6 +122,8 @@ function invoiceToRow(invoice: Invoice): ReceivableRow {
     financing_status: invoice.financingStatus,
     financing_price_sui: invoice.financingPrice,
     metadata_checksum: invoice.metadataChecksum ?? null,
+    acknowledged_at_ms: invoice.acknowledgedAtMs ?? null,
+    acknowledged_tx: invoice.acknowledgedTx ?? null,
   };
 }
 
@@ -147,6 +151,8 @@ function rowToInvoice(row: ReceivableRow): Invoice {
     blobId,
     metadataChecksum: row.metadata_checksum ?? undefined,
     txDigest: row.tx_digest ?? undefined,
+    acknowledgedAtMs: row.acknowledged_at_ms ?? undefined,
+    acknowledgedTx: row.acknowledged_tx ?? undefined,
     evidence: evidenceFromRow(status, payer, blobId, row.due_date),
     events: ["Loaded from Supabase index"],
   };
