@@ -1,6 +1,6 @@
 // Payment asset configuration.
 //
-// InvoNFT settles receivables in a stablecoin (USDC) while staying entirely on
+// InvoFi settles receivables in a stablecoin (USDC) while staying entirely on
 // the Sui network: transactions are Sui PTBs and gas is still paid in SUI. Only
 // the *settlement coin* (create/list price, buy, and final payment) is USDC.
 //

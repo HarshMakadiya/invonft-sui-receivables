@@ -1,8 +1,8 @@
-# InvoNFT NFT Escrow Extension PRD
+# InvoFi NFT Escrow Extension PRD
 
 ## Purpose
 
-Add optional NFT collateral escrow to InvoNFT so an invoice can be backed by an
+Add optional NFT collateral escrow to InvoFi so an invoice can be backed by an
 on-chain NFT while the USDC invoice remains unpaid. The NFT is locked in a Sui
 escrow object and released only after the invoice is paid or resolved through a
 future default/dispute path.
@@ -13,7 +13,7 @@ collateral. The core settlement asset remains USDC.
 
 ## Current System Baseline
 
-InvoNFT currently supports:
+InvoFi currently supports:
 
 - Creating `InvoiceReceivable<T>` objects on Sui Testnet.
 - Storing invoice/evidence metadata on Walrus.
@@ -34,7 +34,7 @@ Current payment invariant:
 
 Some payers may not have USDC available when the receivable is created or
 financed. Without collateral, the buyer/financier has only invoice evidence and
-counterparty trust. InvoNFT needs a Sui-native way to show that an asset is
+counterparty trust. InvoFi needs a Sui-native way to show that an asset is
 locked against the invoice until settlement.
 
 ## Goals

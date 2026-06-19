@@ -1,10 +1,13 @@
-# InvoNFT Receivables Console
+# InvoFi Receivables Console
 
-React + TypeScript + Tailwind frontend for the InvoNFT PRD.
+React + TypeScript + Tailwind frontend for the InvoFi PRD.
 
-Live demo: https://invonft-sui-receivables.pages.dev/
+Live demo (legacy deployment slug): https://invonft-sui-receivables.pages.dev/
 
-InvoNFT turns unpaid invoices into programmable Sui receivable objects. Issuers
+See [INVOFI_REBRAND_PRD.md](INVOFI_REBRAND_PRD.md) for the naming scope and
+legacy compatibility identifiers.
+
+InvoFi turns unpaid invoices into programmable Sui receivable objects. Issuers
 can create receivables, attach Walrus-backed evidence, list payment rights for
 financing, and let the final payer settle directly to the current verified
 payment recipient.
@@ -161,13 +164,14 @@ browser.
 Server-side Cloudflare variables:
 
 ```bash
-MAILERSEND_API_KEY=mlsn_...
-INVOICE_EMAIL_FROM="InvoNFT <invoices@your-domain.com>"
+MAILJET_API_KEY=your_mailjet_api_key
+MAILJET_API_SECRET=your_mailjet_api_secret
+INVOICE_EMAIL_FROM="InvoFi <invoices@your-domain.com>"
 INVOICE_REPLY_TO=support@your-domain.com
 INVO_PUBLIC_APP_URL=https://invonft-sui-receivables.pages.dev
 ```
 
-If `MAILERSEND_API_KEY` or `INVOICE_EMAIL_FROM` is missing, invoice creation
+If `MAILJET_API_KEY`, `MAILJET_API_SECRET`, or `INVOICE_EMAIL_FROM` is missing, invoice creation
 still works and the notification is skipped. Emails are only attempted for the
 first successful index sync of an `InvoiceCreated` transaction; rejected wallet
 prompts, failed transactions, list/buy/pay actions, and already-indexed invoices
@@ -251,7 +255,7 @@ How it works:
 1. The browser builds the transaction (commands only) and posts it to the
    `functions/api/sponsor.js` Pages Function.
 2. The sponsor (a server-held key) sets itself as gas owner, attaches its SUI,
-   verifies the call targets the InvoNFT package, and signs.
+   verifies the call targets the InvoFi package, and signs.
 3. The user's wallet signs the exact sponsored bytes (authorizing their action).
 4. The transaction executes with both signatures.
 

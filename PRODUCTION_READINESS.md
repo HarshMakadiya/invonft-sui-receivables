@@ -1,4 +1,4 @@
-# InvoNFT Production Readiness Plan
+# InvoFi Production Readiness Plan
 
 This document separates the current hackathon/Testnet build from the work needed
 before real users, real invoices, or real money.

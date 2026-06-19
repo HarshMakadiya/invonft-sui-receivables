@@ -1,11 +1,11 @@
-# InvoNFT System Design
+# InvoFi System Design
 
 This document is the design guardrail for the whole project. Keep it updated
 whenever the app, Move package, API, storage, or deployment model changes.
 
 ## Product Boundary
 
-InvoNFT is a non-custodial receivables workflow:
+InvoFi is a non-custodial receivables workflow:
 
 - Issuers create invoice receivable objects.
 - Evidence is attached through Walrus blobs.

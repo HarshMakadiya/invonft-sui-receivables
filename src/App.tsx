@@ -810,10 +810,10 @@ function App() {
           <div className="rounded-[1rem] border border-line bg-paperalt/30 p-3">
             <button className="flex w-full items-center gap-3 text-left" onClick={() => navigate("landing")} type="button">
               <div className="grid h-10 w-10 place-items-center rounded-xl bg-moss text-base font-black text-lead shadow-flat">
-                IN
+                IF
               </div>
               <div>
-                <p className="text-base font-bold tracking-tight text-ink font-poppins">InvoNFT</p>
+                <p className="text-base font-bold tracking-tight text-ink font-poppins">InvoFi</p>
                 <p className="text-[9px] text-inkmuted font-mono uppercase tracking-wider">Receivables console</p>
               </div>
             </button>
@@ -979,7 +979,7 @@ function Landing({
   const differentiators = [
     {
       icon: <ReceiptText size={20} />,
-      title: "Receivable object, not a static NFT",
+      title: "Receivable object, not static metadata",
       body: "Each invoice is a live Sui Move object carrying amount, due date, payment recipient, financing status, and settlement logic.",
     },
     {
@@ -1022,9 +1022,9 @@ function Landing({
       <div className="mx-auto w-full max-w-[1180px] px-4 py-5 lg:px-6">
         <header className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="grid h-10 w-10 place-items-center rounded-xl bg-moss text-base font-black text-lead shadow-flat">IN</div>
+            <div className="grid h-10 w-10 place-items-center rounded-xl bg-moss text-base font-black text-lead shadow-flat">IF</div>
             <div>
-              <p className="text-base font-bold tracking-tight text-ink font-poppins">InvoNFT</p>
+              <p className="text-base font-bold tracking-tight text-ink font-poppins">InvoFi</p>
               <p className="text-[9px] text-inkmuted font-mono uppercase tracking-wider">Programmable receivables on Sui</p>
             </div>
           </div>
@@ -1056,7 +1056,7 @@ function Landing({
               Turn unpaid invoices into programmable receivables.
             </h1>
             <p className="mt-5 max-w-xl text-balance text-sm leading-6 text-inksecondary">
-              InvoNFT converts invoices into live Sui Move objects that can be paid, verified, listed,
+              InvoFi converts invoices into live Sui Move objects that can be paid, verified, listed,
               financed, and settled — using Walrus-backed evidence and non-custodial, Sui-native payment routing.
               We are not minting invoice images. We are building receivables infrastructure on Sui.
             </p>

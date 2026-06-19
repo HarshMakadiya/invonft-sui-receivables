@@ -1,24 +1,25 @@
-const MAILERSEND_EMAILS_URL = "https://api.mailersend.com/v1/email";
+const MAILJET_SEND_URL = "https://api.mailjet.com/v3.1/send";
 const DEFAULT_EXPLORER_URL = "https://suiscan.xyz/testnet";
 
 export function isInvoiceEmailConfigured(env) {
-  return Boolean(env.MAILERSEND_API_KEY?.trim() && env.INVOICE_EMAIL_FROM?.trim());
+  return Boolean(env.MAILJET_API_KEY?.trim() && env.MAILJET_API_SECRET?.trim() && env.INVOICE_EMAIL_FROM?.trim());
 }
 
 export async function sendInvoiceCreatedEmail(env, invoice, options = {}) {
-  const apiKey = env.MAILERSEND_API_KEY?.trim();
+  const apiKey = env.MAILJET_API_KEY?.trim();
+  const apiSecret = env.MAILJET_API_SECRET?.trim();
   const from = parseEmailIdentity(env.INVOICE_EMAIL_FROM?.trim());
   const replyTo = parseEmailIdentity(env.INVOICE_REPLY_TO?.trim());
   const to = invoice.clientEmail?.trim();
 
-  if (!apiKey) {
+  if (!apiKey || !apiSecret) {
     return { status: "skipped", reason: "Email provider is not configured." };
   }
 
   if (!from?.email) {
     return {
       status: "skipped",
-      reason: "INVOICE_EMAIL_FROM must be a valid sender email, for example: InvoNFT <invoices@example.com>.",
+      reason: "INVOICE_EMAIL_FROM must be a valid sender email, for example: InvoFi <invoices@example.com>.",
     };
   }
 
@@ -33,22 +34,38 @@ export async function sendInvoiceCreatedEmail(env, invoice, options = {}) {
   const suiTxUrl = invoice.txDigest ? `${explorerBaseUrl}/tx/${invoice.txDigest}` : undefined;
   const walrusUrl = invoice.blobId ? walrusEvidenceUrl(env, invoice.blobId, appBaseUrl) : undefined;
 
-  const subject = `Invoice ${invoice.id} created on InvoNFT`;
-  const response = await fetch(MAILERSEND_EMAILS_URL, {
+  const subject = `Invoice ${invoice.id} created on InvoFi`;
+  const response = await fetch(MAILJET_SEND_URL, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Basic ${btoa(`${apiKey}:${apiSecret}`)}`,
       "Content-Type": "application/json",
-      "X-Requested-With": "XMLHttpRequest",
     },
     body: JSON.stringify({
-      from,
-      to: [{ email: to, name: invoice.clientName || undefined }],
-      reply_to: replyTo?.email ? replyTo : undefined,
-      subject,
-      text: invoiceCreatedText(invoice, { invoiceUrl, suiObjectUrl, suiTxUrl, walrusUrl }),
-      html: invoiceCreatedHtml(invoice, { invoiceUrl, suiObjectUrl, suiTxUrl, walrusUrl }),
-      tags: ["invonft", "invoice-created"],
+      Messages: [
+        {
+          From: {
+            Email: from.email,
+            Name: from.name || undefined,
+          },
+          To: [
+            {
+              Email: to,
+              Name: invoice.clientName || undefined,
+            },
+          ],
+          ReplyTo: replyTo?.email
+            ? {
+                Email: replyTo.email,
+                Name: replyTo.name || undefined,
+              }
+            : undefined,
+          Subject: subject,
+          TextPart: invoiceCreatedText(invoice, { invoiceUrl, suiObjectUrl, suiTxUrl, walrusUrl }),
+          HTMLPart: invoiceCreatedHtml(invoice, { invoiceUrl, suiObjectUrl, suiTxUrl, walrusUrl }),
+          CustomID: `invofi-${invoice.id}`,
+        },
+      ],
     }),
   });
 
@@ -58,12 +75,14 @@ export async function sendInvoiceCreatedEmail(env, invoice, options = {}) {
   }
 
   const result = await response.json().catch(() => ({}));
-  return { status: "sent", provider: "mailersend", id: result.message_id || response.headers.get("x-message-id") };
+  const messageResult = result.Messages?.[0];
+  const messageId = messageResult?.To?.[0]?.MessageID || messageResult?.MessageID;
+  return { status: "sent", provider: "mailjet", id: messageId };
 }
 
 function invoiceCreatedText(invoice, links) {
   return [
-    `Invoice ${invoice.id} was created on InvoNFT.`,
+    `Invoice ${invoice.id} was created on InvoFi.`,
     "",
     `Client: ${invoice.clientName}`,
     `Description: ${invoice.description}`,
@@ -96,7 +115,7 @@ function invoiceCreatedHtml(invoice, links) {
   <body style="margin:0;background:#f8f5ed;color:#1d1d1a;font-family:Inter,Arial,sans-serif;">
     <div style="max-width:640px;margin:0 auto;padding:32px 20px;">
       <div style="border:1px solid #d8d0bf;border-radius:18px;background:#fffdf8;padding:28px;">
-        <p style="margin:0 0 10px;color:#24533f;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;">InvoNFT receivable</p>
+        <p style="margin:0 0 10px;color:#24533f;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;">InvoFi receivable</p>
         <h1 style="margin:0 0 16px;font-size:28px;line-height:1.15;">Invoice ${escapeHtml(invoice.id)} was created</h1>
         <p style="margin:0 0 24px;color:#4b4a43;font-size:15px;line-height:1.6;">A Sui Testnet receivable has been created for your review.</p>
         ${detailTable(invoice)}

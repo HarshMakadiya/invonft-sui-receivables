@@ -14,7 +14,7 @@ type InvoicePdfInput = {
 
 export function createInvoicePdfBlob(input: InvoicePdfInput | Invoice) {
   const lines = [
-    "InvoNFT Receivable Invoice",
+    "InvoFi Receivable Invoice",
     `Invoice: ${"id" in input ? input.id : input.invoiceNumber}`,
     `Client: ${input.clientName}`,
     `Email: ${input.clientEmail}`,

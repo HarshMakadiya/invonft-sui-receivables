@@ -79,7 +79,7 @@ export async function onRequestPost({ request, env }) {
         });
 
       if (!hasReceivableCall || !onlyAllowedCalls) {
-        return jsonResponse({ error: "Sponsor only covers InvoNFT receivable transactions." }, { status: 403 });
+        return jsonResponse({ error: "Sponsor only covers InvoFi receivable transactions." }, { status: 403 });
       }
     }
 

@@ -1,8 +1,8 @@
-# InvoNFT Deployment Checklist
+# InvoFi Deployment Checklist
 
 Use this before pushing a demo build or sharing the Cloudflare Pages URL.
 
-Live demo URL: https://invonft-sui-receivables.pages.dev/
+Live demo URL (legacy deployment slug): https://invonft-sui-receivables.pages.dev/
 
 ## Cloudflare Pages
 
@@ -40,17 +40,17 @@ Cloudflare Pages Functions server-side variables:
 - `RECEIVABLE_MODULE=receivable`
 - `RECEIVABLE_ESCROW_MODULE=receivable_escrow`
 - `SPONSOR_PRIVATE_KEY` optional secret used only by the sponsorship Function
-- `MAILERSEND_API_KEY` optional, for client invoice email
-- `INVOICE_EMAIL_FROM` optional, required when `MAILERSEND_API_KEY` is set
+- `MAILJET_API_KEY` optional, for client invoice email
+- `MAILJET_API_SECRET` optional, required when `MAILJET_API_KEY` is set
 - `INVOICE_REPLY_TO` optional
 - `INVO_PUBLIC_APP_URL` optional, used for email invoice links
 
 `SUPABASE_SERVICE_ROLE_KEY` is secret. Store it only as a Cloudflare Pages
 environment variable for Functions. Do not add it to any `VITE_*` variable.
 `RECEIVABLE_PACKAGE_ID` is public, but setting it server-side lets the Function
-reject objects that do not belong to the deployed InvoNFT package.
+reject objects that do not belong to the deployed InvoFi package.
 
-`MAILERSEND_API_KEY` is also secret. The email notification path runs only after
+`MAILJET_API_KEY` and `MAILJET_API_SECRET` are also secret. The email notification path runs only after
 a verified `InvoiceCreated` transaction is synced, and is skipped when email env
 is not configured.
 

@@ -22,7 +22,7 @@ export async function onRequestGet({ env, params }) {
     const response = await fetchWithRetry(walrusUrl);
     const headers = new Headers(response.headers);
     headers.set("Cache-Control", "public, max-age=300");
-    headers.set("X-InvoNFT-Walrus-Blob", blobId);
+    headers.set("X-InvoFi-Walrus-Blob", blobId);
     return new Response(response.body, {
       status: response.status,
       statusText: response.statusText,

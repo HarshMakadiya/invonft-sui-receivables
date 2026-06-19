@@ -2,7 +2,7 @@
 
 ## Context & thesis
 
-InvoNFT settles B2B invoice receivables in USDC on Sui (create →
+InvoFi settles B2B invoice receivables in USDC on Sui (create →
 list → buy payment rights → pay). The competitive field (Centrifuge, Huma,
 Goldfinch, Credix) competes on **liquidity pools and off-chain underwriting**.
 None make the **buyer ↔ payer ↔ issuer trust** trustless at the protocol level.
