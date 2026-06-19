@@ -24,7 +24,6 @@ export type EvidencePackage = {
     amountMatchesLineItems: boolean;
     dueDateValid: boolean;
     unpaid: boolean;
-    walrusBlobAvailable: boolean;
   };
 };
 

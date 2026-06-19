@@ -33,7 +33,6 @@ export async function buildEvidencePackage(input: EvidencePackageInput): Promise
       amountMatchesLineItems,
       dueDateValid: new Date(input.dueDate).getTime() > Date.now(),
       unpaid: true,
-      walrusBlobAvailable: false,
     },
   };
 
