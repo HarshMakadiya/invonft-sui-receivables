@@ -16,6 +16,8 @@ The app focuses on product workflow instead of pitch content:
 - Invoice detail and evidence health score
 - Financing marketplace
 - Buyer portfolio
+- Payer acknowledgement before an invoice can be financed
+- Optional USDC security deposits with paid-release and default-claim paths
 - Sui dApp Kit wallet connection on Testnet
 - Public verification links for Sui objects, transaction digests, and Walrus blobs
 - Supabase-backed receivable index so created invoices survive refresh
@@ -29,14 +31,16 @@ object model and payment-right transfer logic.
 
 ## Latest Testnet Deployment
 
-- Package ID: `0xdbe4bc142611c7c6e49690fdb36e2662679211e9dd857c002b9010aeeb7d1e17`
-- InvoiceCounter ID: `0xe70a4ed4580abaaef7d8e2f9ce26200fb5129ea64f5954fdf22d989dd90593ce`
-- PlatformConfig ID: `0xee50dceb2a53cfeec32a59fcdf6dc32551ef1f97b40d97d0337dd138d51fb9d5`
-- Publish transaction: `DdNzTxFMWcr7By3LS58rfP3VM5j7vQPqX1MUZGC2Tpwf`
+- Package ID: `0x44135549f5c650da76f87662848d2a3aa46704a8b231e17cf180220f172190e6`
+- InvoiceCounter ID: `0x09435a2fa5ba63b23fef3ae7ca154638e2a48f501b54cad96b7d6cc9d7231340`
+- PlatformConfig ID: `0x032312aa87962ed6707babf73871abf64e31cf6c82cb4b5463ac04fc891301f7`
+- Platform fee: `100 bps` (1%) to `0xd662f2a8ace3a6e61a50b29766fcd83b4e9f7b364974d738eab3b30550fc8cd4`
+- Fee configuration transaction: `4NJ3aZH2oj5zCyJP2QpMT32zgBDybK7tEGrDfA8ww5dp`
+- Publish transaction: `D2gkkL1ojxJt91SJADXVZA2Kgj5qwHQar1iQYACenBVz`
 - Package explorer:
-  https://suiscan.xyz/testnet/object/0xdbe4bc142611c7c6e49690fdb36e2662679211e9dd857c002b9010aeeb7d1e17
+  https://suiscan.xyz/testnet/object/0x44135549f5c650da76f87662848d2a3aa46704a8b231e17cf180220f172190e6
 - Publish transaction explorer:
-  https://suiscan.xyz/testnet/tx/DdNzTxFMWcr7By3LS58rfP3VM5j7vQPqX1MUZGC2Tpwf
+  https://suiscan.xyz/testnet/tx/D2gkkL1ojxJt91SJADXVZA2Kgj5qwHQar1iQYACenBVz
 
 ## Current Implementation State
 
@@ -44,9 +48,9 @@ object model and payment-right transfer logic.
 - `src/data/mockReceivables.ts` only keeps demo wallet labels and default
   verification helpers for the guided workflow.
 - Sui Testnet is the settlement/state source for live object actions.
-- Development/staging can use Supabase directly as a browser index for
-  persistence, filtering, refresh survival, and shareable invoice views.
-- Production mode reads/writes through the Cloudflare Pages Functions indexer
+- Supabase provides persistence, filtering, refresh survival, and shareable
+  invoice views; anonymous clients have read-only access.
+- Verified writes go through the Cloudflare Pages Functions indexer
   API, which verifies the submitted Sui transaction touched the receivable
   object before syncing Supabase.
 - Walrus stores invoice/evidence blobs for every created receivable.
@@ -62,14 +66,18 @@ vars. A fully live proof should show:
 1. Create a receivable and capture the Sui transaction digest.
 2. Confirm the created `InvoiceReceivable` object opens in Suiscan Testnet.
 3. Confirm the evidence package uses a real Walrus blob ID and aggregator link.
-4. List the receivable for financing.
-5. Buy the receivable from a buyer wallet and confirm `payment_recipient`
+4. Acknowledge the invoice from the configured payer wallet.
+5. Optionally lock a USDC security deposit and capture its escrow object ID.
+6. List the receivable for financing.
+7. Buy the receivable from a buyer wallet and confirm `payment_recipient`
    changes to the buyer.
-6. Pay the invoice from the configured payer wallet.
-7. Confirm final payment routes to the current `payment_recipient`.
-8. Confirm the platform fee lands in the configured fee-recipient wallet during
+8. Pay the invoice from the configured payer wallet.
+9. Confirm final payment routes to the current `payment_recipient`.
+10. Release the deposit back to its depositor after payment. Test the separate
+    default claim with another receivable after its due date and grace period.
+11. Confirm the platform fee lands in the configured fee-recipient wallet during
    the buy/financing step.
-9. Refresh the app and confirm the row reloads from the configured index.
+12. Refresh the app and confirm the row reloads from the configured index.
 
 ## Local Development
 
@@ -100,11 +108,14 @@ VITE_INVO_APP_MODE=development
 VITE_INVO_INDEXER_URL=
 VITE_INVO_RECEIVABLE_PACKAGE_ID=0x...
 VITE_INVO_RECEIVABLE_MODULE=receivable
+VITE_INVO_ESCROW_MODULE=receivable_escrow
 VITE_INVO_INVOICE_COUNTER_ID=0x...
 VITE_INVO_PLATFORM_CONFIG_ID=0x...
 VITE_INVO_PAYMENT_COIN_TYPE=0x...::usdc::USDC
 VITE_INVO_PAYMENT_COIN_SYMBOL=USDC
 VITE_INVO_PAYMENT_COIN_DECIMALS=6
+VITE_INVO_SPONSOR_URL=/api/sponsor
+VITE_INVO_SPONSOR_ADDRESS=0x...
 VITE_WALRUS_PUBLISHER_URL=https://publisher.walrus-testnet.walrus.space
 VITE_WALRUS_AGGREGATOR_URL=https://aggregator.walrus-testnet.walrus.space
 VITE_WALRUS_STORAGE_EPOCHS=5
@@ -112,8 +123,9 @@ VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your_publishable_or_anon_key
 ```
 
-The frontend has transaction builders for create, list, buy, pay, and cancel
-actions. They require these values before building real Move calls.
+The frontend has transaction builders for create, acknowledge, list, buy, pay,
+cancel, and security-deposit lock/release/claim actions. They require these
+values before building real Move calls.
 
 For Cloudflare production, set `VITE_INVO_APP_MODE=production` and
 `VITE_INVO_INDEXER_URL=/api`. Add these server-side Cloudflare Pages Function
@@ -125,6 +137,8 @@ SUPABASE_SERVICE_ROLE_KEY=your_server_side_service_role_key
 SUI_RPC_URL=https://fullnode.testnet.sui.io:443
 RECEIVABLE_PACKAGE_ID=0x...
 RECEIVABLE_MODULE=receivable
+RECEIVABLE_ESCROW_MODULE=receivable_escrow
+SPONSOR_PRIVATE_KEY=suiprivkey1...
 ```
 
 `SUPABASE_SERVICE_ROLE_KEY` is a secret. Put it only in Cloudflare Pages
@@ -291,12 +305,15 @@ configured aggregator endpoint. Mock IDs are shown but intentionally disabled.
 This flow works best after publishing the Move package and configuring Supabase:
 
 1. Connect a Testnet wallet with SUI.
-2. Create a receivable and optionally publish evidence to Walrus.
+2. Create a receivable; its evidence is published to Walrus.
 3. Confirm the Sui object ID, transaction digest, and index row are present.
-4. Use the Issuer role to list payment rights.
-5. Switch to Buyer and buy the listed rights from the marketplace.
-6. Switch to Payer and pay the invoice using the configured payer wallet.
-7. Refresh and confirm the state reloads from the configured index.
+4. Connect the configured payer wallet and acknowledge the invoice.
+5. Optionally lock a USDC security deposit from any connected wallet.
+6. Use the Issuer wallet to list payment rights.
+7. Switch to Buyer and buy the listed rights from the marketplace.
+8. Switch to Payer and pay the invoice using the configured payer wallet.
+9. Reconnect the depositor and release the deposit after payment.
+10. Refresh and confirm the state reloads from the configured index.
 
 ## Deployment Direction
 
@@ -338,8 +355,8 @@ checks, invoice verification, privacy controls, and dispute handling.
 
 1. Keep Cloudflare Pages env vars aligned with the latest Testnet package,
    `InvoiceCounter`, and `PlatformConfig` IDs.
-2. Run one live create -> list -> buy -> pay flow on Testnet after every
-   contract republish.
+2. Run one live create -> acknowledge -> deposit -> list -> buy -> pay ->
+   release flow on Testnet after every contract republish.
 3. Verify platform fees land in the configured fee-recipient wallet during the
    buy/financing step.
 4. Expand the production indexer/API if the app needs private search,

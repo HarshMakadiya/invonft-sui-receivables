@@ -8,9 +8,14 @@ import { toBase64 } from "@mysten/sui/utils";
 // The sponsor endpoint is a Cloudflare Pages Function (functions/api/sponsor.js)
 // and only runs under Cloudflare or `wrangler pages dev` — not plain `vite`.
 const sponsorUrl = import.meta.env.VITE_INVO_SPONSOR_URL?.trim() ?? "";
+const sponsorAddress = import.meta.env.VITE_INVO_SPONSOR_ADDRESS?.trim().toLowerCase() ?? "";
 
 export function isSponsorshipEnabled() {
   return Boolean(sponsorUrl);
+}
+
+export function isSponsorWallet(address: string) {
+  return Boolean(sponsorAddress && address.toLowerCase() === sponsorAddress);
 }
 
 export type SponsoredTransaction = {

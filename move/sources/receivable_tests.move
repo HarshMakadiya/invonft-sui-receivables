@@ -18,6 +18,7 @@ module invonft::receivable_tests {
         let config = receivable::platform_config_for_testing(@0x0, @0x9, 100, &mut ctx);
         let financing_payment = coin::mint_for_testing<SUI>(90, &mut ctx);
 
+        receivable::set_acknowledged_for_testing(&mut invoice, 1);
         receivable::list_for_financing(&mut invoice, 90, 1000, &mut ctx);
         receivable::buy_receivable(&mut invoice, &config, financing_payment, &mut ctx);
 
@@ -37,6 +38,7 @@ module invonft::receivable_tests {
         let mut ctx = tx_context::dummy();
         let mut invoice = receivable::invoice_for_testing<SUI>(@0x0, @0x0, 100, &mut ctx);
 
+        receivable::set_acknowledged_for_testing(&mut invoice, 1);
         receivable::list_for_financing(&mut invoice, 90, 1000, &mut ctx);
         assert!(receivable::financing_status(&invoice) == FINANCING_LISTED, 0);
 
@@ -78,6 +80,7 @@ module invonft::receivable_tests {
         let mut ctx = tx_context::dummy();
         let mut invoice = receivable::invoice_for_testing<SUI>(@0x0, @0x0, 100, &mut ctx);
 
+        receivable::set_acknowledged_for_testing(&mut invoice, 1);
         receivable::list_for_financing(&mut invoice, 100, 0, &mut ctx);
         assert!(receivable::financing_status(&invoice) == FINANCING_LISTED, 0);
         receivable::destroy_for_testing(invoice);
@@ -89,6 +92,7 @@ module invonft::receivable_tests {
         let mut ctx = tx_context::dummy();
         let mut invoice = receivable::invoice_for_testing<SUI>(@0x0, @0x0, 100, &mut ctx);
 
+        receivable::set_acknowledged_for_testing(&mut invoice, 1);
         receivable::list_for_financing(&mut invoice, 0, 10000, &mut ctx);
         receivable::destroy_for_testing(invoice);
     }

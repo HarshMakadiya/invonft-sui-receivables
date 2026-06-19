@@ -6,6 +6,8 @@ export type InvoiceStatus = "PENDING" | "PAID" | "OVERDUE";
 
 export type FinancingStatus = "NOT_LISTED" | "LISTED" | "FINANCED" | "CANCELLED";
 
+export type DepositStatus = "LOCKED" | "RELEASED" | "CLAIMED";
+
 export type Evidence = {
   invoicePdf: boolean;
   lineItemsMatch: boolean;
@@ -18,6 +20,7 @@ export type Evidence = {
 
 export type Invoice = {
   id: string;
+  packageId?: string;
   objectId: string;
   clientName: string;
   clientEmail: string;
@@ -35,6 +38,14 @@ export type Invoice = {
   blobObjectId?: string;
   metadataChecksum?: string;
   txDigest?: string;
+  acknowledgedAtMs?: number;
+  acknowledgedTx?: string;
+  depositEscrowId?: string;
+  depositStatus?: DepositStatus;
+  depositDepositor?: string;
+  depositAmount?: number;
+  depositGracePeriodMs?: number;
+  depositTx?: string;
   evidence: Evidence;
   events: string[];
 };

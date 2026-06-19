@@ -44,6 +44,9 @@ coverage/
 # Sui Move
 move/build/
 move/.coverage_map.mvcov
+move/Published.*.toml
+move/fresh_publish*.json
+move/scratch_*.js
 
 # Sui local client / wallets
 .sui/

@@ -14,8 +14,14 @@ Live demo URL: https://invonft-sui-receivables.pages.dev/
   - `VITE_INVO_APP_MODE=production`
   - `VITE_INVO_RECEIVABLE_PACKAGE_ID`
   - `VITE_INVO_RECEIVABLE_MODULE=receivable`
+  - `VITE_INVO_ESCROW_MODULE=receivable_escrow`
   - `VITE_INVO_INVOICE_COUNTER_ID`
   - `VITE_INVO_PLATFORM_CONFIG_ID`
+  - `VITE_INVO_PAYMENT_COIN_TYPE`
+  - `VITE_INVO_PAYMENT_COIN_SYMBOL=USDC`
+  - `VITE_INVO_PAYMENT_COIN_DECIMALS=6`
+  - `VITE_INVO_SPONSOR_URL=/api/sponsor`
+  - `VITE_INVO_SPONSOR_ADDRESS` (public sponsor wallet address)
   - `VITE_WALRUS_PUBLISHER_URL`
   - `VITE_WALRUS_AGGREGATOR_URL`
   - `VITE_WALRUS_STORAGE_EPOCHS=5`
@@ -32,6 +38,8 @@ Cloudflare Pages Functions server-side variables:
 - `SUI_RPC_URL=https://fullnode.testnet.sui.io:443`
 - `RECEIVABLE_PACKAGE_ID`
 - `RECEIVABLE_MODULE=receivable`
+- `RECEIVABLE_ESCROW_MODULE=receivable_escrow`
+- `SPONSOR_PRIVATE_KEY` optional secret used only by the sponsorship Function
 - `MAILERSEND_API_KEY` optional, for client invoice email
 - `INVOICE_EMAIL_FROM` optional, required when `MAILERSEND_API_KEY` is set
 - `INVOICE_REPLY_TO` optional
@@ -71,10 +79,12 @@ is not configured.
 
 Current public Testnet deployment:
 
-- Package ID: `0xdbe4bc142611c7c6e49690fdb36e2662679211e9dd857c002b9010aeeb7d1e17`
-- InvoiceCounter ID: `0xe70a4ed4580abaaef7d8e2f9ce26200fb5129ea64f5954fdf22d989dd90593ce`
-- PlatformConfig ID: `0xee50dceb2a53cfeec32a59fcdf6dc32551ef1f97b40d97d0337dd138d51fb9d5`
-- Publish transaction: `DdNzTxFMWcr7By3LS58rfP3VM5j7vQPqX1MUZGC2Tpwf`
+- Package ID: `0x44135549f5c650da76f87662848d2a3aa46704a8b231e17cf180220f172190e6`
+- InvoiceCounter ID: `0x09435a2fa5ba63b23fef3ae7ca154638e2a48f501b54cad96b7d6cc9d7231340`
+- PlatformConfig ID: `0x032312aa87962ed6707babf73871abf64e31cf6c82cb4b5463ac04fc891301f7`
+- Platform fee: `100 bps` (1%) to `0xd662f2a8ace3a6e61a50b29766fcd83b4e9f7b364974d738eab3b30550fc8cd4`
+- Fee configuration transaction: `4NJ3aZH2oj5zCyJP2QpMT32zgBDybK7tEGrDfA8ww5dp`
+- Publish transaction: `D2gkkL1ojxJt91SJADXVZA2Kgj5qwHQar1iQYACenBVz`
 
 ## Live Demo Proof
 
@@ -83,12 +93,15 @@ Before submitting, run one full flow with real wallet signatures:
 1. Create receivable on Sui Testnet.
 2. Confirm the Sui object ID opens on Suiscan.
 3. Confirm the evidence package has a real Walrus blob ID.
-4. List receivable for financing.
-5. Buy receivable from a buyer wallet.
-6. Confirm the platform fee lands in the configured fee-recipient wallet.
-7. Pay invoice from the configured payer wallet.
-8. Confirm final funds route to the current `payment_recipient`.
-9. Refresh the deployed app and confirm the indexed row reloads.
+4. Acknowledge the receivable from the configured payer wallet.
+5. Lock a security deposit and verify the `DepositEscrow` object.
+6. List receivable for financing.
+7. Buy receivable from a buyer wallet.
+8. Confirm the platform fee lands in the configured fee-recipient wallet.
+9. Pay invoice from the configured payer wallet.
+10. Confirm final funds route to the current `payment_recipient`.
+11. Release the security deposit from its depositor wallet.
+12. Refresh the deployed app and confirm the indexed row reloads.
 
 Avoid using the no-wallet Supabase fallback for the recorded hackathon demo. It
 is useful for UI development, but production mode should use the `/api`
@@ -108,7 +121,8 @@ Suggested table:
 ```sql
 create table if not exists public.receivables (
   id uuid primary key default gen_random_uuid(),
-  invoice_id text not null unique,
+  package_id text,
+  invoice_id text not null,
   sui_object_id text unique,
   tx_digest text,
   blob_id text,
@@ -124,33 +138,51 @@ create table if not exists public.receivables (
   financing_status text not null default 'NOT_LISTED',
   financing_price_sui numeric not null default 0,
   metadata_checksum text,
+  acknowledged_at_ms bigint,
+  acknowledged_tx text,
+  deposit_escrow_id text,
+  deposit_status text,
+  deposit_depositor text,
+  deposit_amount_sui numeric,
+  deposit_grace_period_ms bigint,
+  deposit_tx text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
+-- Migration for an existing `receivables` table (adds payer-acknowledgement fields):
+-- alter table public.receivables
+--   add column if not exists acknowledged_at_ms bigint,
+--   add column if not exists acknowledged_tx text;
+
+-- Migration for Layer A security-deposit escrow:
+-- alter table public.receivables
+--   add column if not exists deposit_escrow_id text,
+--   add column if not exists deposit_status text,
+--   add column if not exists deposit_depositor text,
+--   add column if not exists deposit_amount_sui numeric,
+--   add column if not exists deposit_grace_period_ms bigint,
+--   add column if not exists deposit_tx text;
+
+-- Package-scoped identity keeps repeated invoice numbers from fresh Testnet
+-- deployments separate without deleting historical rows:
+-- alter table public.receivables
+--   add column if not exists package_id text;
+-- create unique index if not exists receivables_package_invoice_idx
+--   on public.receivables (package_id, invoice_id)
+--   where package_id is not null;
+
 alter table public.receivables enable row level security;
 
-create policy "demo read receivables"
+create policy "Allow public read receivable index"
 on public.receivables for select
-to anon
+to public
 using (true);
-
-create policy "demo insert receivables"
-on public.receivables for insert
-to anon
-with check (true);
-
-create policy "demo update receivables"
-on public.receivables for update
-to anon
-using (true)
-with check (true);
 ```
 
-For production, prefer read-only anon policies or no anon policies, then let the
-Cloudflare Function use `SUPABASE_SERVICE_ROLE_KEY` server-side. The permissive
-demo insert/update policies are only for local or staging demos where you accept
-browser-side writes.
+Keep anonymous access read-only. The Cloudflare Function writes with
+`SUPABASE_SERVICE_ROLE_KEY` only after verifying the Sui transaction and object;
+do not add public insert or update policies for this table.
 
 After deploy, create a receivable, refresh the page, and confirm it reloads from
 the `/api/receivables` index instead of local state.

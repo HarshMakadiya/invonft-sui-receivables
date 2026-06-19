@@ -15,6 +15,10 @@ This package contains the Sui Move contract for programmable receivables.
 - `attach_evidence`
 - `mark_overdue`
 - `update_platform_fee`
+- `acknowledge_invoice`
+- `receivable_escrow::lock_deposit`
+- `receivable_escrow::release_deposit`
+- `receivable_escrow::claim_deposit`
 
 The critical invariant is:
 
@@ -40,7 +44,8 @@ sui move test
 The tests cover the core demo invariants: financing updates the payment
 recipient, only the configured payer can pay, and paid invoices cannot be paid
 again. They also cover owner-controlled platform fee updates, cancel listing,
-evidence updates, and invalid financing prices.
+evidence updates, invalid financing prices, payer acknowledgement, and security
+deposit release/default-claim authorization and timing.
 
 ## Publish To Testnet
 

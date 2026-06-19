@@ -39,6 +39,18 @@ export async function onRequestPost({ request, env }) {
     const sponsor = Ed25519Keypair.fromSecretKey(secretKey);
     const sponsorAddress = sponsor.toSuiAddress();
 
+    // Keep the infrastructure wallet separate from application actors. If the
+    // sponsor is also the sender, Sui expects one unique signature while the
+    // dual-signature flow supplies two. More importantly, allowing callers to
+    // name the sponsor as sender would let this endpoint authorize actions as
+    // the infrastructure account.
+    if (sender.toLowerCase() === sponsorAddress.toLowerCase()) {
+      return jsonResponse(
+        { error: "The sponsor wallet cannot act as the transaction sender. Connect the invoice actor wallet instead." },
+        { status: 400 },
+      );
+    }
+
     const client = new SuiJsonRpcClient({
       network: "testnet",
       url: env.SUI_RPC_URL?.trim() || DEFAULT_SUI_RPC_URL,

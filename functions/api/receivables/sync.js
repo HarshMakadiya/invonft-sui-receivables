@@ -2,6 +2,7 @@ import { sendInvoiceCreatedEmail } from "../../_shared/email.js";
 import {
   fetchSuiReceivableObject,
   fetchSuiTransaction,
+  escrowUpdateFromTransaction,
   handleOptions,
   isSuccessfulTransaction,
   jsonResponse,
@@ -25,13 +26,14 @@ export async function onRequestPost({ request, env }) {
     }
 
     const tx = await fetchSuiTransaction(env, invoice.txDigest);
-    if (!isSuccessfulTransaction(tx) || !transactionTouchesObject(tx, invoice.objectId)) {
+    const escrowUpdate = escrowUpdateFromTransaction(env, tx, invoice.objectId);
+    if (!isSuccessfulTransaction(tx) || (!transactionTouchesObject(tx, invoice.objectId) && !escrowUpdate)) {
       return jsonResponse({ error: "Transaction did not touch the receivable object." }, { status: 409 });
     }
 
     const alreadyIndexed = await receivableExists(env, invoice.objectId);
     const chainInvoice = await fetchSuiReceivableObject(env, invoice.objectId);
-    const savedInvoice = await upsertInvoice(env, invoice, chainInvoice);
+    const savedInvoice = await upsertInvoice(env, invoice, chainInvoice, escrowUpdate);
     if (!savedInvoice) {
       return jsonResponse({ error: "Receivable sync did not return a saved invoice." }, { status: 500 });
     }

@@ -59,6 +59,7 @@ export function rowToInvoice(row) {
 
   return {
     id: row.invoice_id,
+    packageId: row.package_id ?? undefined,
     objectId: row.sui_object_id,
     clientName: row.client_name,
     clientEmail: row.client_email ?? "",
@@ -75,6 +76,14 @@ export function rowToInvoice(row) {
     blobId,
     metadataChecksum: row.metadata_checksum ?? undefined,
     txDigest: row.tx_digest ?? undefined,
+    acknowledgedAtMs: row.acknowledged_at_ms ? Number(row.acknowledged_at_ms) : undefined,
+    acknowledgedTx: row.acknowledged_tx ?? undefined,
+    depositEscrowId: row.deposit_escrow_id ?? undefined,
+    depositStatus: row.deposit_status ?? undefined,
+    depositDepositor: row.deposit_depositor ?? undefined,
+    depositAmount: row.deposit_amount_sui == null ? undefined : Number(row.deposit_amount_sui),
+    depositGracePeriodMs: row.deposit_grace_period_ms == null ? undefined : Number(row.deposit_grace_period_ms),
+    depositTx: row.deposit_tx ?? undefined,
     evidence: evidenceFromRow(status, payer, blobId, row.due_date),
     events: ["Loaded from verified production index"],
   };
@@ -90,6 +99,7 @@ export function invoiceToRowFromChain(invoice, chainInvoice) {
   const paymentRecipient = chainFields?.payment_recipient ?? invoice.paymentRecipient ?? invoice.issuer;
 
   return {
+    package_id: chainInvoice?.type?.split("::")[0] ?? invoice.packageId ?? null,
     invoice_id: chainFields ? invoiceIdFromNumber(chainFields.invoice_number) : invoice.id,
     sui_object_id: chainInvoice?.objectId ?? invoice.objectId,
     tx_digest: invoice.txDigest ?? null,
@@ -106,6 +116,8 @@ export function invoiceToRowFromChain(invoice, chainInvoice) {
     financing_status: financingStatus,
     financing_price_sui: chainFields ? fromBaseUnits(chainFields.financing_price_mist) : invoice.financingPrice,
     metadata_checksum: chainFields?.metadata_checksum ?? invoice.metadataChecksum ?? null,
+    acknowledged_at_ms: chainFields ? Number(chainFields.acknowledged_at_ms) : invoice.acknowledgedAtMs ?? null,
+    acknowledged_tx: invoice.acknowledgedTx ?? null,
   };
 }
 
@@ -171,6 +183,54 @@ export function transactionHasEvent(tx, eventName) {
   return events.some((event) => String(event.type ?? "").endsWith(`::${eventName}`));
 }
 
+export function escrowUpdateFromTransaction(env, tx, invoiceObjectId) {
+  const expectedPackageId = env.RECEIVABLE_PACKAGE_ID?.trim() || env.VITE_INVO_RECEIVABLE_PACKAGE_ID?.trim();
+  const expectedModule = env.RECEIVABLE_ESCROW_MODULE?.trim() || "receivable_escrow";
+  const events = Array.isArray(tx?.events) ? tx.events : [];
+
+  for (const event of events) {
+    const eventType = String(event?.type ?? "");
+    const parts = eventType.split("::");
+    if (parts.length < 3 || parts[1] !== expectedModule) {
+      continue;
+    }
+    if (expectedPackageId && parts[0].toLowerCase() !== expectedPackageId.toLowerCase()) {
+      continue;
+    }
+
+    const data = event?.parsedJson;
+    if (!data || String(data.invoice_id ?? "").toLowerCase() !== invoiceObjectId.toLowerCase()) {
+      continue;
+    }
+
+    const eventName = parts[2];
+    if (eventName === "DepositLocked") {
+      return {
+        deposit_escrow_id: String(data.escrow_id ?? ""),
+        deposit_status: "LOCKED",
+        deposit_depositor: String(data.depositor ?? ""),
+        deposit_amount_sui: fromBaseUnits(normalizeU64(data.amount)),
+        deposit_grace_period_ms: Number(normalizeU64(data.grace_period_ms)),
+        deposit_tx: tx.digest ?? null,
+      };
+    }
+    if (eventName === "DepositReleased") {
+      return {
+        deposit_status: "RELEASED",
+        deposit_tx: tx.digest ?? null,
+      };
+    }
+    if (eventName === "DepositClaimed") {
+      return {
+        deposit_status: "CLAIMED",
+        deposit_tx: tx.digest ?? null,
+      };
+    }
+  }
+
+  return null;
+}
+
 export async function verifySuiTransaction(env, txDigest, objectId) {
   const result = await fetchSuiTransaction(env, txDigest);
   if (!isSuccessfulTransaction(result)) {
@@ -227,13 +287,17 @@ export async function fetchSuiReceivableObject(env, objectId) {
       payer: normalizeAddress(fields.payer),
       payment_recipient: normalizeAddress(fields.payment_recipient),
       status: normalizeU8(fields.status),
+      acknowledged_at_ms: normalizeU64(fields.acknowledged_at_ms),
     },
   };
 }
 
-export async function upsertInvoice(env, invoice, chainInvoice) {
+export async function upsertInvoice(env, invoice, chainInvoice, escrowUpdate = null) {
   const { baseUrl, serviceRoleKey } = getSupabaseConfig(env);
-  const row = invoiceToRowFromChain(invoice, chainInvoice);
+  const row = {
+    ...invoiceToRowFromChain(invoice, chainInvoice),
+    ...(escrowUpdate ?? {}),
+  };
   const updateResponse = await fetch(
     `${baseUrl}/rest/v1/receivables?sui_object_id=eq.${encodeURIComponent(row.sui_object_id)}`,
     {

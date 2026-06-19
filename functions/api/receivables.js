@@ -7,7 +7,9 @@ export function onRequestOptions() {
 export async function onRequestGet({ env }) {
   try {
     const { baseUrl, serviceRoleKey } = getSupabaseConfig(env);
-    const response = await fetch(`${baseUrl}/rest/v1/receivables?select=*&sui_object_id=not.is.null&order=created_at.desc`, {
+    const packageId = env.RECEIVABLE_PACKAGE_ID?.trim() || env.VITE_INVO_RECEIVABLE_PACKAGE_ID?.trim();
+    const packageFilter = packageId ? `&package_id=eq.${encodeURIComponent(packageId)}` : "";
+    const response = await fetch(`${baseUrl}/rest/v1/receivables?select=*&sui_object_id=not.is.null${packageFilter}&order=created_at.desc`, {
       headers: supabaseHeaders(serviceRoleKey),
     });
 

@@ -36,6 +36,8 @@ module invonft::receivable {
     const E_NOT_PAYER: u64 = 9;
     const E_NOT_CONFIG_OWNER: u64 = 10;
     const E_BAD_FEE_BPS: u64 = 11;
+    const E_NOT_ACKNOWLEDGED: u64 = 12;
+    const E_ALREADY_ACKNOWLEDGED: u64 = 13;
 
     public struct InvoiceCounter has key {
         id: UID,
@@ -68,6 +70,7 @@ module invonft::receivable {
         created_at_ms: u64,
         paid_at_ms: u64,
         financed_at_ms: u64,
+        acknowledged_at_ms: u64,
         blob_id: String,
         metadata_checksum: String,
         invoice_number: u64,
@@ -79,6 +82,13 @@ module invonft::receivable {
         issuer: address,
         payer: address,
         amount_mist: u64,
+    }
+
+    public struct InvoiceAcknowledged has copy, drop {
+        invoice_id: ID,
+        invoice_number: u64,
+        payer: address,
+        acknowledged_at_ms: u64,
     }
 
     public struct ReceivableListed has copy, drop {
@@ -152,6 +162,7 @@ module invonft::receivable {
             created_at_ms: 0,
             paid_at_ms: 0,
             financed_at_ms: 0,
+            acknowledged_at_ms: 0,
             blob_id,
             metadata_checksum,
             invoice_number,
@@ -168,6 +179,28 @@ module invonft::receivable {
         transfer::share_object(invoice);
     }
 
+    /// The payer cryptographically acknowledges the debt is real. Required
+    /// before the receivable can be listed for financing, which is the core
+    /// fraud-resistance gate against fake invoices and double-financing.
+    public entry fun acknowledge_invoice<T>(
+        invoice: &mut InvoiceReceivable<T>,
+        clock: &Clock,
+        ctx: &mut TxContext,
+    ) {
+        assert!(tx_context::sender(ctx) == invoice.payer, E_NOT_PAYER);
+        assert!(invoice.status == STATUS_PENDING, E_NOT_PENDING);
+        assert!(invoice.acknowledged_at_ms == 0, E_ALREADY_ACKNOWLEDGED);
+
+        invoice.acknowledged_at_ms = clock::timestamp_ms(clock);
+
+        event::emit(InvoiceAcknowledged {
+            invoice_id: object::id(invoice),
+            invoice_number: invoice.invoice_number,
+            payer: invoice.payer,
+            acknowledged_at_ms: invoice.acknowledged_at_ms,
+        });
+    }
+
     public entry fun list_for_financing<T>(
         invoice: &mut InvoiceReceivable<T>,
         financing_price_mist: u64,
@@ -176,6 +209,7 @@ module invonft::receivable {
     ) {
         assert!(tx_context::sender(ctx) == invoice.issuer, E_NOT_ISSUER);
         assert!(invoice.status == STATUS_PENDING, E_NOT_PENDING);
+        assert!(invoice.acknowledged_at_ms > 0, E_NOT_ACKNOWLEDGED);
         assert!(invoice.financing_status != FINANCING_FINANCED, E_ALREADY_FINANCED);
         assert!(financing_price_mist > 0 && financing_price_mist <= invoice.amount_mist, E_BAD_FINANCING_PRICE);
 
@@ -300,6 +334,22 @@ module invonft::receivable {
         invoice.invoice_number
     }
 
+    public fun id<T>(invoice: &InvoiceReceivable<T>): ID {
+        object::id(invoice)
+    }
+
+    public fun payer<T>(invoice: &InvoiceReceivable<T>): address {
+        invoice.payer
+    }
+
+    public fun due_date_ms<T>(invoice: &InvoiceReceivable<T>): u64 {
+        invoice.due_date_ms
+    }
+
+    public fun is_paid<T>(invoice: &InvoiceReceivable<T>): bool {
+        invoice.status == STATUS_PAID
+    }
+
     public fun status<T>(invoice: &InvoiceReceivable<T>): u8 {
         invoice.status
     }
@@ -314,6 +364,14 @@ module invonft::receivable {
 
     public fun amount_mist<T>(invoice: &InvoiceReceivable<T>): u64 {
         invoice.amount_mist
+    }
+
+    public fun acknowledged_at_ms<T>(invoice: &InvoiceReceivable<T>): u64 {
+        invoice.acknowledged_at_ms
+    }
+
+    public fun is_acknowledged<T>(invoice: &InvoiceReceivable<T>): bool {
+        invoice.acknowledged_at_ms > 0
     }
 
     public fun platform_fee_bps(config: &PlatformConfig): u64 {
@@ -345,10 +403,16 @@ module invonft::receivable {
             created_at_ms: 0,
             paid_at_ms: 0,
             financed_at_ms: 0,
+            acknowledged_at_ms: 0,
             blob_id: string::utf8(b"blob"),
             metadata_checksum: string::utf8(b"sha256:test"),
             invoice_number: 1,
         }
+    }
+
+    #[test_only]
+    public(package) fun set_acknowledged_for_testing<T>(invoice: &mut InvoiceReceivable<T>, ms: u64) {
+        invoice.acknowledged_at_ms = ms;
     }
 
     #[test_only]
@@ -367,6 +431,7 @@ module invonft::receivable {
             created_at_ms: _,
             paid_at_ms: _,
             financed_at_ms: _,
+            acknowledged_at_ms: _,
             blob_id: _,
             metadata_checksum: _,
             invoice_number: _,
@@ -407,6 +472,7 @@ module invonft::receivable {
         let config = platform_config_for_testing(@0x0, @0x9, 100, &mut ctx);
         let financing_payment = coin::mint_for_testing<SUI>(90, &mut ctx);
 
+        set_acknowledged_for_testing(&mut invoice, 1);
         list_for_financing(&mut invoice, 90, 1000, &mut ctx);
         buy_receivable(&mut invoice, &config, financing_payment, &mut ctx);
 
@@ -454,6 +520,63 @@ module invonft::receivable {
 
         pay_invoice(&mut invoice, first_payment, &mut ctx);
         pay_invoice(&mut invoice, second_payment, &mut ctx);
+        destroy_for_testing(invoice);
+    }
+
+    #[test]
+    fun payer_can_acknowledge_then_issuer_can_list() {
+        let mut ctx = tx_context::dummy();
+        let mut clock = clock::create_for_testing(&mut ctx);
+        clock::set_for_testing(&mut clock, 500);
+        let mut invoice = invoice_for_testing<SUI>(@0x0, @0x0, 100, &mut ctx);
+
+        assert!(!is_acknowledged(&invoice), 0);
+        acknowledge_invoice(&mut invoice, &clock, &mut ctx);
+        assert!(is_acknowledged(&invoice), 1);
+        assert!(acknowledged_at_ms(&invoice) == 500, 2);
+
+        list_for_financing(&mut invoice, 90, 1000, &mut ctx);
+        assert!(financing_status(&invoice) == FINANCING_LISTED, 3);
+
+        clock::destroy_for_testing(clock);
+        destroy_for_testing(invoice);
+    }
+
+    #[test]
+    #[expected_failure(abort_code = E_NOT_ACKNOWLEDGED)]
+    fun unacknowledged_invoice_cannot_be_listed() {
+        let mut ctx = tx_context::dummy();
+        let mut invoice = invoice_for_testing<SUI>(@0x0, @0x0, 100, &mut ctx);
+
+        list_for_financing(&mut invoice, 90, 1000, &mut ctx);
+        destroy_for_testing(invoice);
+    }
+
+    #[test]
+    #[expected_failure(abort_code = E_NOT_PAYER)]
+    fun only_payer_can_acknowledge() {
+        let mut ctx = tx_context::dummy();
+        let mut clock = clock::create_for_testing(&mut ctx);
+        let mut invoice = invoice_for_testing<SUI>(@0x0, @0x2, 100, &mut ctx);
+
+        acknowledge_invoice(&mut invoice, &clock, &mut ctx);
+
+        clock::destroy_for_testing(clock);
+        destroy_for_testing(invoice);
+    }
+
+    #[test]
+    #[expected_failure(abort_code = E_ALREADY_ACKNOWLEDGED)]
+    fun invoice_cannot_be_acknowledged_twice() {
+        let mut ctx = tx_context::dummy();
+        let mut clock = clock::create_for_testing(&mut ctx);
+        clock::set_for_testing(&mut clock, 500);
+        let mut invoice = invoice_for_testing<SUI>(@0x0, @0x0, 100, &mut ctx);
+
+        acknowledge_invoice(&mut invoice, &clock, &mut ctx);
+        acknowledge_invoice(&mut invoice, &clock, &mut ctx);
+
+        clock::destroy_for_testing(clock);
         destroy_for_testing(invoice);
     }
 }

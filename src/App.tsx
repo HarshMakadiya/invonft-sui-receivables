@@ -37,18 +37,22 @@ import { isRealSuiId, isRealTransactionDigest, isRealWalrusBlobId, suiObjectUrl,
 import { fromBase64 } from "@mysten/sui/utils";
 import { paymentCoin, roundAmount } from "./lib/coin";
 import { feeBreakdown } from "./lib/platform";
-import { isSponsorshipEnabled, requestSponsorship } from "./lib/sponsor";
+import { isSponsorWallet, isSponsorshipEnabled, requestSponsorship } from "./lib/sponsor";
 import { compactNumber, formatToken, shortAddress } from "./lib/format";
 import { healthScore } from "./lib/healthScore";
 import { createInvoicePdfBlob, downloadInvoicePdf } from "./lib/invoicePdf";
 import { fetchReceivablesFromIndexer, isIndexerConfigured, syncReceivableWithIndexer } from "./lib/receivableIndex";
 import { getReceivableContractReadiness, receivableContract } from "./lib/receivableContract";
 import {
+  buildAcknowledgeInvoiceTx,
   buildBuyReceivableTx,
+  buildClaimDepositTx,
   buildCreateReceivableTx,
+  buildLockDepositTx,
   buildListForFinancingTx,
   buildMarkOverdueTx,
   buildPayInvoiceTx,
+  buildReleaseDepositTx,
 } from "./lib/receivableTransactions";
 import { fetchReceivablesFromDb, isSupabaseConfigured, saveReceivableToDb } from "./lib/supabaseReceivables";
 import { downloadEvidencePackage, evidenceUrl, uploadEvidencePackage, uploadWalrusBlob } from "./lib/walrus";
@@ -101,8 +105,21 @@ function isSuiAddress(value: string) {
   return /^0x[0-9a-fA-F]{64}$/.test(value);
 }
 
+function isAcknowledged(invoice: Invoice) {
+  return (invoice.acknowledgedAtMs ?? 0) > 0;
+}
+
+// The payer must acknowledge the debt on-chain before it can be financed.
+function canAcknowledgeInvoice(invoice: Invoice, walletRole: WalletRole, activeAddress: string) {
+  if (invoice.status !== "PENDING" || isAcknowledged(invoice)) {
+    return false;
+  }
+
+  return isProductionMode ? sameAddress(activeAddress, invoice.payer) : walletRole === "payer";
+}
+
 function canListInvoice(invoice: Invoice, walletRole: WalletRole, activeAddress: string) {
-  if (invoice.status !== "PENDING" || invoice.financingStatus !== "NOT_LISTED") {
+  if (invoice.status !== "PENDING" || invoice.financingStatus !== "NOT_LISTED" || !isAcknowledged(invoice)) {
     return false;
   }
 
@@ -125,6 +142,19 @@ function canPayInvoice(invoice: Invoice, walletRole: WalletRole, activeAddress: 
   return isProductionMode ? sameAddress(activeAddress, invoice.payer) : walletRole === "payer";
 }
 
+function canReleaseDeposit(invoice: Invoice, activeAddress: string) {
+  return invoice.depositStatus === "LOCKED" && invoice.status === "PAID" && sameAddress(activeAddress, invoice.depositDepositor);
+}
+
+function canClaimDeposit(invoice: Invoice, activeAddress: string) {
+  if (invoice.depositStatus !== "LOCKED" || invoice.status === "PAID" || !sameAddress(activeAddress, invoice.paymentRecipient)) {
+    return false;
+  }
+
+  const claimAt = new Date(invoice.dueDate).getTime() + (invoice.depositGracePeriodMs ?? 0);
+  return Number.isFinite(claimAt) && Date.now() > claimAt;
+}
+
 function App() {
   const account = useCurrentAccount();
   const suiClient = useCurrentClient();
@@ -137,6 +167,7 @@ function App() {
   const [toast, setToast] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const [listingInvoice, setListingInvoice] = useState<Invoice | null>(null);
+  const [depositInvoice, setDepositInvoice] = useState<Invoice | null>(null);
 
   const selectedInvoice = invoices.find((invoice) => invoice.id === selectedInvoiceId) ?? invoices[0] ?? null;
   const wallet = wallets[walletRole];
@@ -260,7 +291,7 @@ function App() {
     }
 
     try {
-      const result = isSponsorshipEnabled()
+      const result = isSponsorshipEnabled() && !isSponsorWallet(activeAddress)
         ? await executeSponsoredTransaction(buildTransaction())
         : await dAppKit.signAndExecuteTransaction({ transaction: buildTransaction() });
 
@@ -331,6 +362,42 @@ function App() {
 
   function financingPriceFor(invoice: Invoice, discountBps: number) {
     return roundAmount(invoice.amount * ((10_000 - discountBps) / 10_000));
+  }
+
+  async function acknowledgeInvoice(invoice: Invoice) {
+    if (isProductionMode && !sameAddress(activeAddress, invoice.payer)) {
+      notify("Connect the payer wallet to acknowledge this invoice.");
+      return;
+    }
+
+    const isLiveInvoice = hasRealObjectId(invoice);
+    const digest = isLiveInvoice
+      ? await trySubmitTransaction("Acknowledge transaction", () =>
+        buildAcknowledgeInvoiceTx({
+          invoiceObjectId: invoice.objectId,
+        }),
+      )
+      : null;
+
+    if (isLiveInvoice && !digest) {
+      return;
+    }
+
+    updateInvoice({
+      ...invoice,
+      acknowledgedAtMs: Date.now(),
+      acknowledgedTx: digest?.digest ?? invoice.acknowledgedTx,
+      txDigest: digest?.digest ?? invoice.txDigest,
+      events: [
+        ...invoice.events,
+        digest
+          ? `Payer acknowledged invoice: ${shortAddress(digest.digest)}`
+          : shouldUseDemoFallback(invoice)
+            ? "Payer acknowledged the invoice"
+            : "Acknowledge transaction skipped",
+      ],
+    });
+    notify("Invoice acknowledged by payer");
   }
 
   function requestListInvoice(invoice: Invoice) {
@@ -496,6 +563,82 @@ function App() {
     notify(`Funds routed to ${shortAddress(invoice.paymentRecipient)}`);
   }
 
+  async function lockDeposit(invoice: Invoice, amount: number, graceDays: number) {
+    if (!account || !hasRealObjectId(invoice)) {
+      notify("Connect a wallet and select a live receivable to add protection.");
+      return;
+    }
+    if (!Number.isFinite(amount) || amount <= 0 || !Number.isFinite(graceDays) || graceDays < 0) {
+      notify("Enter a positive deposit and a non-negative grace period.");
+      return;
+    }
+
+    const gracePeriodMs = Math.round(graceDays * 24 * 60 * 60 * 1000);
+    const escrowType = `${receivableContract.packageId}::${receivableContract.escrowModuleName}::DepositEscrow`;
+    const result = await trySubmitTransaction(
+      "Deposit transaction",
+      () => buildLockDepositTx({ invoiceObjectId: invoice.objectId, amountSui: amount, gracePeriodMs }),
+      escrowType,
+    );
+    if (!result?.createdObjectId) {
+      if (result) notify("Deposit was submitted, but its escrow object could not be resolved yet.");
+      return;
+    }
+
+    updateInvoice({
+      ...invoice,
+      depositEscrowId: result.createdObjectId,
+      depositStatus: "LOCKED",
+      depositDepositor: account.address,
+      depositAmount: amount,
+      depositGracePeriodMs: gracePeriodMs,
+      depositTx: result.digest,
+      txDigest: result.digest,
+      events: [...invoice.events, `Security deposit locked: ${shortAddress(result.createdObjectId)}`],
+    });
+    setDepositInvoice(null);
+  }
+
+  async function releaseDeposit(invoice: Invoice) {
+    if (!invoice.depositEscrowId || !canReleaseDeposit(invoice, activeAddress)) {
+      notify("Connect the deposit owner wallet after the invoice is paid.");
+      return;
+    }
+
+    const result = await trySubmitTransaction("Release deposit transaction", () =>
+      buildReleaseDepositTx({ invoiceObjectId: invoice.objectId, escrowObjectId: invoice.depositEscrowId! }),
+    );
+    if (!result) return;
+
+    updateInvoice({
+      ...invoice,
+      depositStatus: "RELEASED",
+      depositTx: result.digest,
+      txDigest: result.digest,
+      events: [...invoice.events, `Security deposit released: ${shortAddress(result.digest)}`],
+    });
+  }
+
+  async function claimDeposit(invoice: Invoice) {
+    if (!invoice.depositEscrowId || !canClaimDeposit(invoice, activeAddress)) {
+      notify("The current payment recipient can claim only after the due date and grace period.");
+      return;
+    }
+
+    const result = await trySubmitTransaction("Claim deposit transaction", () =>
+      buildClaimDepositTx({ invoiceObjectId: invoice.objectId, escrowObjectId: invoice.depositEscrowId! }),
+    );
+    if (!result) return;
+
+    updateInvoice({
+      ...invoice,
+      depositStatus: "CLAIMED",
+      depositTx: result.digest,
+      txDigest: result.digest,
+      events: [...invoice.events, `Security deposit claimed: ${shortAddress(result.digest)}`],
+    });
+  }
+
   async function createInvoice(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -526,8 +669,8 @@ function App() {
 
     const lineItemsMatch = lineItems.length > 0 && Math.abs(lineItemsTotal - amount) < 1e-9;
 
-    if (isProductionMode && !isSuiAddress(payerAddress)) {
-      notify("Enter a valid payer wallet address before creating a receivable.");
+    if (canSubmitTransactions && !isSuiAddress(payerAddress)) {
+      notify("Enter a valid 66-character Sui address (starting with 0x) for the payer wallet.");
       return;
     }
 
@@ -612,6 +755,7 @@ function App() {
 
     const invoice: Invoice = {
       id,
+      packageId: receivableContract.packageId,
       objectId: createResult?.createdObjectId ?? `db:${id}`,
       clientName,
       clientEmail,
@@ -781,6 +925,10 @@ function App() {
               onList={requestListInvoice}
               onMarkOverdue={markInvoiceOverdue}
               onPay={payInvoice}
+              onAcknowledge={acknowledgeInvoice}
+              onRequestDeposit={setDepositInvoice}
+              onReleaseDeposit={releaseDeposit}
+              onClaimDeposit={claimDeposit}
               onCreate={() => navigate("create")}
               onQuery={setQuery}
               onSelect={selectInvoice}
@@ -806,6 +954,13 @@ function App() {
           invoice={listingInvoice}
           onClose={() => setListingInvoice(null)}
           onSubmit={(discountPercent) => listInvoice(listingInvoice, discountPercent)}
+        />
+      )}
+      {depositInvoice && (
+        <DepositModal
+          invoice={depositInvoice}
+          onClose={() => setDepositInvoice(null)}
+          onSubmit={(amount, graceDays) => lockDeposit(depositInvoice, amount, graceDays)}
         />
       )}
     </div>
@@ -1000,6 +1155,10 @@ function Dashboard({
   onList,
   onMarkOverdue,
   onPay,
+  onAcknowledge,
+  onRequestDeposit,
+  onReleaseDeposit,
+  onClaimDeposit,
   onQuery,
   onSelect,
   onShowMarketplace,
@@ -1015,6 +1174,10 @@ function Dashboard({
   onList: (invoice: Invoice) => void;
   onMarkOverdue: (invoice: Invoice) => void;
   onPay: (invoice: Invoice) => void;
+  onAcknowledge: (invoice: Invoice) => void;
+  onRequestDeposit: (invoice: Invoice) => void;
+  onReleaseDeposit: (invoice: Invoice) => void;
+  onClaimDeposit: (invoice: Invoice) => void;
   onQuery: (value: string) => void;
   onSelect: (id: string) => void;
   onShowMarketplace: () => void;
@@ -1091,6 +1254,7 @@ function Dashboard({
                   onBuy={onBuy}
                   onList={onList}
                   onPay={onPay}
+                  onAcknowledge={onAcknowledge}
                   onSelect={onSelect}
                 />
               ))
@@ -1106,7 +1270,19 @@ function Dashboard({
       </section>
 
       {selectedInvoice ? (
-        <InvoiceInspector activeAddress={activeAddress} invoice={selectedInvoice} walletRole={walletRole} onBuy={onBuy} onList={onList} onMarkOverdue={onMarkOverdue} onPay={onPay} />
+        <InvoiceInspector
+          activeAddress={activeAddress}
+          invoice={selectedInvoice}
+          walletRole={walletRole}
+          onBuy={onBuy}
+          onList={onList}
+          onMarkOverdue={onMarkOverdue}
+          onPay={onPay}
+          onAcknowledge={onAcknowledge}
+          onRequestDeposit={onRequestDeposit}
+          onReleaseDeposit={onReleaseDeposit}
+          onClaimDeposit={onClaimDeposit}
+        />
       ) : (
         <EmptyInspector />
       )}
@@ -1203,6 +1379,10 @@ function InvoiceInspector({
   onList,
   onMarkOverdue,
   onPay,
+  onAcknowledge,
+  onRequestDeposit,
+  onReleaseDeposit,
+  onClaimDeposit,
 }: {
   activeAddress: string;
   invoice: Invoice;
@@ -1211,6 +1391,10 @@ function InvoiceInspector({
   onList: (invoice: Invoice) => void;
   onMarkOverdue: (invoice: Invoice) => void;
   onPay: (invoice: Invoice) => void;
+  onAcknowledge: (invoice: Invoice) => void;
+  onRequestDeposit: (invoice: Invoice) => void;
+  onReleaseDeposit: (invoice: Invoice) => void;
+  onClaimDeposit: (invoice: Invoice) => void;
 }) {
   const [evidencePreview, setEvidencePreview] = useState<EvidencePackage | null>(null);
   const [evidenceError, setEvidenceError] = useState("");
@@ -1339,7 +1523,7 @@ function InvoiceInspector({
         </div>
 
         <div className="mt-5 grid grid-cols-2 gap-2">
-          <ActionButton activeAddress={activeAddress} invoice={invoice} walletRole={walletRole} onBuy={onBuy} onList={onList} onPay={onPay} />
+          <ActionButton activeAddress={activeAddress} invoice={invoice} walletRole={walletRole} onBuy={onBuy} onList={onList} onPay={onPay} onAcknowledge={onAcknowledge} />
           <VerificationLink
             disabled={!hasWalrusBlob}
             href={hasWalrusBlob ? evidenceUrl(invoice.blobId) : undefined}
@@ -1405,6 +1589,14 @@ function InvoiceInspector({
         )}
       </div>
 
+      <DepositProtection
+        activeAddress={activeAddress}
+        invoice={invoice}
+        onClaim={onClaimDeposit}
+        onLock={onRequestDeposit}
+        onRelease={onReleaseDeposit}
+      />
+
       <div className="rounded-[1.25rem] border border-line bg-lead p-5 shadow-flat">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -1438,6 +1630,30 @@ function InvoiceInspector({
             href={hasWalrusBlob ? evidenceUrl(invoice.blobId) : undefined}
             label="Walrus evidence"
           />
+          <VerificationRow
+            disabled={!invoice.acknowledgedTx || !isRealTransactionDigest(invoice.acknowledgedTx)}
+            helper={
+              isAcknowledged(invoice)
+                ? `Acknowledged ${new Date(invoice.acknowledgedAtMs ?? 0).toISOString().slice(0, 10)}`
+                : "Awaiting payer acknowledgement"
+            }
+            href={
+              invoice.acknowledgedTx && isRealTransactionDigest(invoice.acknowledgedTx)
+                ? suiTransactionUrl(invoice.acknowledgedTx)
+                : undefined
+            }
+            label="Payer acknowledgement"
+          />
+          <VerificationRow
+            disabled={!invoice.depositEscrowId || !isRealSuiId(invoice.depositEscrowId)}
+            helper={
+              invoice.depositEscrowId
+                ? `${invoice.depositStatus ?? "LOCKED"} · ${formatToken(invoice.depositAmount ?? 0)}`
+                : "No security deposit locked"
+            }
+            href={invoice.depositEscrowId && isRealSuiId(invoice.depositEscrowId) ? suiObjectUrl(invoice.depositEscrowId) : undefined}
+            label="Security deposit"
+          />
         </div>
       </div>
 
@@ -1469,6 +1685,68 @@ function InvoiceInspector({
         </div>
       )}
     </aside>
+  );
+}
+
+function DepositProtection({
+  activeAddress,
+  invoice,
+  onClaim,
+  onLock,
+  onRelease,
+}: {
+  activeAddress: string;
+  invoice: Invoice;
+  onClaim: (invoice: Invoice) => void;
+  onLock: (invoice: Invoice) => void;
+  onRelease: (invoice: Invoice) => void;
+}) {
+  const status = invoice.depositStatus;
+  const graceDays = Math.round((invoice.depositGracePeriodMs ?? 0) / (24 * 60 * 60 * 1000));
+  const canLock = Boolean(activeAddress && isRealSuiId(invoice.objectId) && !status && invoice.status !== "PAID");
+  const canRelease = canReleaseDeposit(invoice, activeAddress);
+  const canClaim = canClaimDeposit(invoice, activeAddress);
+
+  return (
+    <div className="rounded-[1.25rem] border border-line bg-lead p-5 shadow-flat">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-moss font-mono">Layer A protection</p>
+          <h3 className="mt-1.5 text-sm font-bold text-ink font-poppins">USDC security deposit</h3>
+        </div>
+        <span className={`rounded-full border px-2.5 py-1 text-[9px] font-black uppercase tracking-wider font-mono ${status === "LOCKED" ? "border-sun/30 bg-sun/10 text-sun" : status ? "border-moss/30 bg-mosssoft text-moss" : "border-line bg-paperalt/50 text-inkmuted"}`}>
+          {status ?? "Not locked"}
+        </span>
+      </div>
+
+      {status ? (
+        <div className="mt-4 grid grid-cols-2 gap-2 rounded-xl border border-line bg-paperalt/30 p-3">
+          <SmallStat label="Deposit" value={formatToken(invoice.depositAmount ?? 0)} />
+          <SmallStat label="Grace" value={`${graceDays} day${graceDays === 1 ? "" : "s"}`} />
+          <div className="col-span-2 text-[10px] text-inkmuted font-mono">Owner {shortAddress(invoice.depositDepositor ?? "")}</div>
+        </div>
+      ) : (
+        <p className="mt-3 text-xs leading-5 text-inksecondary">
+          Lock USDC against this receivable. It returns to the depositor after payment or becomes claimable by the payment-rights holder after default.
+        </p>
+      )}
+
+      {!status && (
+        <button className="mt-4 w-full rounded-xl bg-moss px-4 py-3 text-xs font-bold text-lead shadow-flat transition hover:bg-mossdeep disabled:bg-paperalt/50 disabled:text-inkmuted/50" disabled={!canLock} onClick={() => onLock(invoice)} type="button">
+          Add protection
+        </button>
+      )}
+      {status === "LOCKED" && (
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <button className="rounded-xl bg-moss px-3 py-3 text-xs font-bold text-lead disabled:bg-paperalt/50 disabled:text-inkmuted/50" disabled={!canRelease} onClick={() => onRelease(invoice)} type="button">
+            Release deposit
+          </button>
+          <button className="rounded-xl border border-sun/30 bg-sun/10 px-3 py-3 text-xs font-bold text-sun disabled:border-line disabled:bg-paperalt/40 disabled:text-inkmuted/50" disabled={!canClaim} onClick={() => onClaim(invoice)} type="button">
+            Claim default
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1581,6 +1859,7 @@ function InvoiceRow({
   onBuy,
   onList,
   onPay,
+  onAcknowledge,
   onSelect,
 }: {
   activeAddress: string;
@@ -1590,6 +1869,7 @@ function InvoiceRow({
   onBuy: (invoice: Invoice) => void;
   onList: (invoice: Invoice) => void;
   onPay: (invoice: Invoice) => void;
+  onAcknowledge: (invoice: Invoice) => void;
   onSelect: (id: string) => void;
 }) {
   const health = healthScore(invoice);
@@ -1613,7 +1893,7 @@ function InvoiceRow({
           <MiniChip selected={selected}>Recipient {shortAddress(invoice.paymentRecipient)}</MiniChip>
         </div>
       </button>
-      <ActionButton activeAddress={activeAddress} invoice={invoice} walletRole={walletRole} onBuy={onBuy} onList={onList} onPay={onPay} />
+      <ActionButton activeAddress={activeAddress} invoice={invoice} walletRole={walletRole} onBuy={onBuy} onList={onList} onPay={onPay} onAcknowledge={onAcknowledge} />
     </article>
   );
 }
@@ -1625,6 +1905,7 @@ function ActionButton({
   onBuy,
   onList,
   onPay,
+  onAcknowledge,
 }: {
   activeAddress: string;
   invoice: Invoice;
@@ -1632,11 +1913,23 @@ function ActionButton({
   onBuy: (invoice: Invoice) => void;
   onList: (invoice: Invoice) => void;
   onPay: (invoice: Invoice) => void;
+  onAcknowledge: (invoice: Invoice) => void;
 }) {
   if (invoice.status !== "PENDING") {
     return (
       <button disabled className="rounded-xl bg-paperalt/40 border border-line px-4 py-3 text-xs font-bold text-inkmuted/50">
         Settled
+      </button>
+    );
+  }
+
+  if (canAcknowledgeInvoice(invoice, walletRole, activeAddress)) {
+    return (
+      <button
+        className="rounded-xl bg-sun px-4 py-3 text-xs font-bold text-lead shadow-flat hover:bg-sun/80 transition hover:-translate-y-0.5 duration-150"
+        onClick={() => onAcknowledge(invoice)}
+      >
+        Acknowledge invoice
       </button>
     );
   }
@@ -1991,6 +2284,122 @@ function ListReceivableModal({
           <button
             className="rounded-xl border border-moss bg-moss px-5 py-3 text-xs font-bold text-lead shadow-flat transition hover:bg-mossdeep disabled:border-line disabled:bg-paperalt/50 disabled:text-inkmuted/50"
             disabled={!isValidDiscount || !isValidPrice}
+            type="submit"
+          >
+            Continue to wallet
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function DepositModal({
+  invoice,
+  onClose,
+  onSubmit,
+}: {
+  invoice: Invoice;
+  onClose: () => void;
+  onSubmit: (amount: number, graceDays: number) => void;
+}) {
+  const suggestedAmount = Math.max(roundAmount(invoice.amount * 0.1), 0.000001);
+  const [amount, setAmount] = useState(String(suggestedAmount));
+  const [graceDays, setGraceDays] = useState("7");
+  const numericAmount = Number(amount);
+  const numericGraceDays = Number(graceDays);
+  const isValid =
+    Number.isFinite(numericAmount) &&
+    numericAmount > 0 &&
+    Number.isFinite(numericGraceDays) &&
+    numericGraceDays >= 0 &&
+    Number.isInteger(numericGraceDays);
+
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+
+  function submitDeposit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (isValid) onSubmit(roundAmount(numericAmount), numericGraceDays);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-ink/45 px-4 py-6 backdrop-blur-sm">
+      <form
+        className="w-full max-w-lg rounded-[1.5rem] border border-line bg-[#FFFDF7] p-5 shadow-lifted md:p-6"
+        onSubmit={submitDeposit}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-moss font-poppins">Layer A protection</p>
+            <h2 className="mt-1.5 text-xl font-bold tracking-tight text-ink font-poppins">Add a security deposit</h2>
+            <p className="mt-1 text-xs leading-5 text-inksecondary">
+              Lock {paymentCoin.symbol} against {invoice.id}. Payment returns it to the depositor; an unresolved default makes it claimable by the payment-rights holder.
+            </p>
+          </div>
+          <button
+            aria-label="Close security deposit dialog"
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-line bg-lead text-inksecondary shadow-flat transition hover:bg-paperalt/50 hover:text-ink"
+            onClick={onClose}
+            type="button"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="mt-5 grid gap-4 rounded-2xl border border-line bg-paperalt/35 p-4">
+          <div className="grid grid-cols-2 gap-3">
+            <SmallStat label="Invoice value" value={formatToken(invoice.amount)} />
+            <SmallStat label="Suggested deposit" value={formatToken(suggestedAmount)} />
+          </div>
+          <label className="grid gap-2">
+            <span className="text-xs font-bold uppercase tracking-wider text-ink font-poppins">Deposit amount</span>
+            <div className="flex items-center rounded-xl border border-line bg-lead px-4 py-3 focus-within:border-moss focus-within:ring-1 focus-within:ring-moss/30">
+              <input
+                className="min-w-0 flex-1 bg-transparent text-lg font-bold text-ink outline-none font-numbers"
+                inputMode="decimal"
+                min="0.000001"
+                onChange={(event) => setAmount(event.target.value)}
+                step="0.000001"
+                type="number"
+                value={amount}
+              />
+              <span className="text-xs font-bold text-inkmuted font-mono">{paymentCoin.symbol}</span>
+            </div>
+          </label>
+          <label className="grid gap-2">
+            <span className="text-xs font-bold uppercase tracking-wider text-ink font-poppins">Grace period</span>
+            <div className="flex items-center rounded-xl border border-line bg-lead px-4 py-3 focus-within:border-moss focus-within:ring-1 focus-within:ring-moss/30">
+              <input
+                className="min-w-0 flex-1 bg-transparent text-lg font-bold text-ink outline-none font-numbers"
+                inputMode="numeric"
+                min="0"
+                onChange={(event) => setGraceDays(event.target.value)}
+                step="1"
+                type="number"
+                value={graceDays}
+              />
+              <span className="text-xs font-bold text-inkmuted font-mono">days</span>
+            </div>
+          </label>
+          <p className="text-[11px] leading-5 text-inksecondary">
+            After the due date plus this grace period, the current payment recipient may claim the deposit if the invoice is still unpaid.
+          </p>
+        </div>
+
+        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button className="rounded-xl border border-line bg-lead px-5 py-3 text-xs font-bold text-ink shadow-flat transition hover:bg-paperalt/50" onClick={onClose} type="button">
+            Cancel
+          </button>
+          <button
+            className="rounded-xl border border-moss bg-moss px-5 py-3 text-xs font-bold text-lead shadow-flat transition hover:bg-mossdeep disabled:border-line disabled:bg-paperalt/50 disabled:text-inkmuted/50"
+            disabled={!isValid}
             type="submit"
           >
             Continue to wallet

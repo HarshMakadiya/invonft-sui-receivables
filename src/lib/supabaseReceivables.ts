@@ -1,7 +1,8 @@
-import type { Evidence, FinancingStatus, Invoice, InvoiceStatus } from "../types/receivable";
+import type { DepositStatus, Evidence, FinancingStatus, Invoice, InvoiceStatus } from "../types/receivable";
 
 type ReceivableRow = {
   id?: string;
+  package_id?: string | null;
   invoice_id: string;
   sui_object_id: string | null;
   tx_digest: string | null;
@@ -18,12 +19,21 @@ type ReceivableRow = {
   financing_status: FinancingStatus;
   financing_price_sui: number;
   metadata_checksum: string | null;
+  acknowledged_at_ms?: number | null;
+  acknowledged_tx?: string | null;
+  deposit_escrow_id?: string | null;
+  deposit_status?: DepositStatus | null;
+  deposit_depositor?: string | null;
+  deposit_amount_sui?: number | null;
+  deposit_grace_period_ms?: number | null;
+  deposit_tx?: string | null;
   created_at?: string;
   updated_at?: string;
 };
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim() ?? "";
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim() ?? "";
+const receivablePackageId = import.meta.env.VITE_INVO_RECEIVABLE_PACKAGE_ID?.trim() ?? "";
 
 export function isSupabaseConfigured() {
   return Boolean(supabaseUrl && supabaseAnonKey);
@@ -34,7 +44,8 @@ export async function fetchReceivablesFromDb() {
     return [];
   }
 
-  const response = await fetch(`${restBaseUrl()}/receivables?select=*&order=created_at.desc`, {
+  const packageFilter = receivablePackageId ? `&package_id=eq.${encodeURIComponent(receivablePackageId)}` : "";
+  const response = await fetch(`${restBaseUrl()}/receivables?select=*${packageFilter}&order=created_at.desc`, {
     headers: requestHeaders(),
   });
 
@@ -104,6 +115,7 @@ function requestHeaders(prefer?: string) {
 
 function invoiceToRow(invoice: Invoice): ReceivableRow {
   return {
+    package_id: invoice.packageId ?? (receivablePackageId || null),
     invoice_id: invoice.id,
     sui_object_id: isPersistableObjectId(invoice.objectId) ? invoice.objectId : null,
     tx_digest: invoice.txDigest ?? null,
@@ -120,6 +132,14 @@ function invoiceToRow(invoice: Invoice): ReceivableRow {
     financing_status: invoice.financingStatus,
     financing_price_sui: invoice.financingPrice,
     metadata_checksum: invoice.metadataChecksum ?? null,
+    acknowledged_at_ms: invoice.acknowledgedAtMs ?? null,
+    acknowledged_tx: invoice.acknowledgedTx ?? null,
+    deposit_escrow_id: invoice.depositEscrowId ?? null,
+    deposit_status: invoice.depositStatus ?? null,
+    deposit_depositor: invoice.depositDepositor ?? null,
+    deposit_amount_sui: invoice.depositAmount ?? null,
+    deposit_grace_period_ms: invoice.depositGracePeriodMs ?? null,
+    deposit_tx: invoice.depositTx ?? null,
   };
 }
 
@@ -131,6 +151,7 @@ function rowToInvoice(row: ReceivableRow): Invoice {
 
   return {
     id: row.invoice_id,
+    packageId: row.package_id ?? undefined,
     objectId: row.sui_object_id ?? `db:${row.invoice_id}`,
     clientName: row.client_name,
     clientEmail: row.client_email ?? "",
@@ -147,6 +168,14 @@ function rowToInvoice(row: ReceivableRow): Invoice {
     blobId,
     metadataChecksum: row.metadata_checksum ?? undefined,
     txDigest: row.tx_digest ?? undefined,
+    acknowledgedAtMs: row.acknowledged_at_ms ?? undefined,
+    acknowledgedTx: row.acknowledged_tx ?? undefined,
+    depositEscrowId: row.deposit_escrow_id ?? undefined,
+    depositStatus: row.deposit_status ?? undefined,
+    depositDepositor: row.deposit_depositor ?? undefined,
+    depositAmount: row.deposit_amount_sui == null ? undefined : Number(row.deposit_amount_sui),
+    depositGracePeriodMs: row.deposit_grace_period_ms == null ? undefined : Number(row.deposit_grace_period_ms),
+    depositTx: row.deposit_tx ?? undefined,
     evidence: evidenceFromRow(status, payer, blobId, row.due_date),
     events: ["Loaded from Supabase index"],
   };
