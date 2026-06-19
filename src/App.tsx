@@ -1441,7 +1441,7 @@ function InvoiceInspector({
           <div className="flex items-end justify-between gap-3">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-inkmuted font-poppins font-semibold">Audit Score</p>
-              <p className="mt-1 text-4xl font-bold tracking-tight text-ink font-numbers">
+              <p className="mt-1 text-4xl font-bold text-ink font-numbers">
                 {health.score}
                 <span className="text-xs font-mono text-inkmuted">/100</span>
               </p>
@@ -2513,7 +2513,7 @@ function Portfolio({
     <section className="grid gap-5">
       <div className="grid gap-4 sm:grid-cols-3">
         <Metric accent="mint" icon={<WalletCards />} label="Owned rights" value={String(owned.length)} />
-        <Metric accent="aqua" icon={<Landmark />} label="Expected settlement" value={formatToken(expectedSettlement)} />
+        <Metric accent="aqua" icon={<Landmark />} label="Expected settlement" value={compactNumber(expectedSettlement)} unit={paymentCoin.symbol} />
         <Metric accent="sun" icon={<Clock3 />} label={isProductionMode ? "Connected wallet" : "Current role"} value={isProductionMode ? (activeAddress ? shortAddress(activeAddress) : "Connect wallet") : walletLabel} />
       </div>
       <div className="rounded-[1.25rem] border border-line bg-[#FFFDF7] p-5 shadow-flat md:p-7">
@@ -2651,13 +2651,18 @@ function Metric({
     sun: "bg-sun/10 text-sun border-sun/25",
     coral: "bg-coral/10 text-coral border-coral/25",
   }[accent];
+
+  // Dynamically shrink text size if the numeric value is very long to prevent card layout breakage
+  const isLong = value.length > 8;
+  const valueSizeClass = isLong ? "text-lg sm:text-xl" : "text-2xl";
+
   return (
     <div className="flex min-h-[92px] items-center gap-3 rounded-[1.1rem] border border-line bg-lead p-3.5 shadow-flat transition-all duration-300 hover:border-moss/40">
       <div className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl border [&>svg]:h-5 [&>svg]:w-5 ${style}`}>{icon}</div>
       <div className="min-w-0 flex-1">
         <p className="truncate text-[9px] font-bold uppercase tracking-[0.12em] text-inkmuted font-poppins font-semibold">{label}</p>
-        <p className="mt-1 flex items-baseline gap-1 text-ink">
-          <span className="min-w-0 truncate text-2xl font-bold tracking-tight font-numbers">{value}</span>
+        <p className="mt-1 flex flex-wrap items-baseline gap-x-1 gap-y-0.5 text-ink leading-none">
+          <span className={`min-w-0 font-bold font-numbers ${valueSizeClass}`}>{value}</span>
           {unit && <span className="shrink-0 text-sm font-bold text-inkmuted font-numbers">{unit}</span>}
         </p>
       </div>

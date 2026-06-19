@@ -5,10 +5,22 @@ export function formatToken(value: number) {
 }
 
 export function compactNumber(value: number) {
-  if (value >= 1000) {
-    return `${(value / 1000).toFixed(value % 1000 === 0 ? 0 : 1)}K`;
+  if (value >= 1e9) {
+    const val = value / 1e9;
+    return `${Number(val.toFixed(val % 1 === 0 ? 0 : 1))}B`;
   }
-  return value.toLocaleString();
+  if (value >= 1e6) {
+    const val = value / 1e6;
+    return `${Number(val.toFixed(val % 1 === 0 ? 0 : 1))}M`;
+  }
+  if (value >= 1e3) {
+    const val = value / 1e3;
+    return `${Number(val.toFixed(val % 1 === 0 ? 0 : 1))}K`;
+  }
+  return value.toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
 }
 
 export function formatCompactToken(value: number) {

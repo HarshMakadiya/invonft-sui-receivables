@@ -142,3 +142,8 @@ mysten-dapp-kit-connect-button {
   display: inline-flex;
   transform: none !important;
 }
+
+/* Ensure numerical digits are lining (aligned on baseline) and tabular (monospaced width) to prevent collision with decimals and align correctly */
+.font-numbers {
+  font-variant-numeric: lining-nums tabular-nums;
+}
