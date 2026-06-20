@@ -4,6 +4,12 @@ This package contains the Sui Move contract for programmable receivables.
 
 The public product is **InvoFi**. The Move package uses the `invofi` named address and `invofi_receivables` package name.
 
+Current Testnet deployment:
+
+- Latest package (v2): `0x9d23d715ef896b652740efa738185e424094bb83eb982735f1b2283d1b9c0e4a`
+- Original package/object identity: `0x44135549f5c650da76f87662848d2a3aa46704a8b231e17cf180220f172190e6`
+- Upgrade transaction: `Cf7tqkkTDRQ7JZ6BRHp4c9ZQRw6qkWTBWCCBp5A7xZQz`
+
 ## What It Implements
 
 - Shared `InvoiceCounter` object created at publish time.
@@ -55,7 +61,9 @@ deposit release/default-claim authorization and timing. Settlement tests cover
 full-payment escrow, payer-only funding and confirmation, delivery-gated
 release, deadline refunds, and terminal-state protections.
 
-## Publish To Testnet
+## Publish Or Upgrade On Testnet
+
+For the first deployment:
 
 ```bash
 sui client active-env
@@ -63,13 +71,24 @@ sui client switch --env testnet
 sui client publish --gas-budget 100000000
 ```
 
+For later versions, use the upgrade capability recorded in `Published.toml`:
+
+```bash
+sui client upgrade \
+  --upgrade-capability <UPGRADE_CAPABILITY_ID> \
+  --gas-budget 100000000
+```
+
 After publish, copy:
 
 - Published package ID -> `VITE_INVO_RECEIVABLE_PACKAGE_ID`
+- Original package ID -> `VITE_INVO_ORIGINAL_PACKAGE_ID`
 - Shared `InvoiceCounter` object ID -> `VITE_INVO_INVOICE_COUNTER_ID`
 - Shared `PlatformConfig` object ID -> `VITE_INVO_PLATFORM_CONFIG_ID`
 
 Use these in `.env` and Cloudflare Pages environment variables.
+After an upgrade, Move calls target the latest package while existing receivable
+object types retain the original package identity.
 
 ## Platform Fee
 

@@ -40,7 +40,14 @@ export async function onRequestPost({ request, env }) {
     }
 
     try {
-      await refreshReputations(env, [savedInvoice.issuer, savedInvoice.payer, savedInvoice.buyer].filter(Boolean));
+      await refreshReputations(env, [
+        savedInvoice.issuer,
+        savedInvoice.payer,
+        savedInvoice.buyer,
+        savedInvoice.paymentRecipient,
+        savedInvoice.depositDepositor,
+        savedInvoice.settlementPayer,
+      ].filter(Boolean));
     } catch (error) {
       console.error("Reputation refresh failed", error);
     }

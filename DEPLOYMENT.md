@@ -18,6 +18,8 @@ Live demo URL: https://invofi.dpdns.org/
   - `VITE_INVO_ESCROW_MODULE=receivable_escrow`
   - `VITE_INVO_INVOICE_COUNTER_ID`
   - `VITE_INVO_PLATFORM_CONFIG_ID`
+  - `VITE_INVO_FEE_RECIPIENT`
+  - `VITE_INVO_PLATFORM_FEE_BPS=100`
   - `VITE_INVO_PAYMENT_COIN_TYPE`
   - `VITE_INVO_PAYMENT_COIN_SYMBOL=USDC`
   - `VITE_INVO_PAYMENT_COIN_DECIMALS=6`
@@ -44,8 +46,11 @@ Cloudflare Pages Functions server-side variables:
 - `SPONSOR_PRIVATE_KEY` optional secret used only by the sponsorship Function
 - `MAILJET_API_KEY` optional, for client invoice email
 - `MAILJET_API_SECRET` optional, required when `MAILJET_API_KEY` is set
+- `INVOICE_EMAIL_FROM` required when Mailjet is enabled
 - `INVOICE_REPLY_TO` optional
 - `INVO_PUBLIC_APP_URL` optional, used for email invoice links
+- `SUI_EXPLORER_URL` optional, defaults to Suiscan Testnet
+- `WALRUS_AGGREGATOR_URL` optional fallback for email evidence links
 
 `SUPABASE_SERVICE_ROLE_KEY` is secret. Store it only as a Cloudflare Pages
 environment variable for Functions. Do not add it to any `VITE_*` variable.
@@ -67,11 +72,14 @@ is not configured.
    sui move build
    ```
 
-3. Publish to Testnet:
+3. For a new package, publish to Testnet:
 
    ```bash
    sui client publish --gas-budget 100000000
    ```
+
+   For an existing package, run `sui client upgrade` with the upgrade
+   capability recorded in `move/Published.toml`.
 
 4. Copy the published package ID, shared `InvoiceCounter` object ID, and shared
    `PlatformConfig` object ID into `.env` locally and Cloudflare Pages
@@ -103,10 +111,12 @@ Before submitting, run one full flow with real wallet signatures:
 6. List receivable for financing.
 7. Buy receivable from a buyer wallet.
 8. Confirm the platform fee lands in the configured fee-recipient wallet.
-9. Pay invoice from the configured payer wallet.
+9. Verify either terminal path:
+   - Direct payment, then release the Layer A deposit.
+   - Full Layer B escrow, delivery proof, payer confirmation, and settlement release.
 10. Confirm final funds route to the current `payment_recipient`.
-11. Release the security deposit from its depositor wallet.
-12. Refresh the deployed app and confirm the indexed row reloads.
+11. Test a separate Layer B deadline refund and Layer A default claim.
+12. Refresh and confirm escrow state and reputation badges reload from the index.
 
 Avoid using the no-wallet Supabase fallback for the recorded hackathon demo. It
 is useful for UI development, but production mode should use the `/api`
@@ -151,6 +161,14 @@ create table if not exists public.receivables (
   deposit_amount_sui numeric,
   deposit_grace_period_ms bigint,
   deposit_tx text,
+  settlement_escrow_id text,
+  settlement_status text,
+  settlement_payer text,
+  settlement_amount_sui numeric,
+  settlement_delivery_confirmed boolean,
+  settlement_deadline_ms bigint,
+  settlement_delivery_proof_blob_id text,
+  settlement_tx text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -182,19 +200,19 @@ create table if not exists public.receivables (
 
 -- Layer C protocol-history reputation is a server-maintained projection.
 -- Browser roles receive SELECT only; verified syncs write with service_role.
--- create table if not exists public.reputation (
---   wallet text primary key,
---   score integer not null default 50 check (score between 0 and 100),
---   total_invoices integer not null default 0,
---   acknowledged_invoices integer not null default 0,
---   invoices_paid integer not null default 0,
---   defaults integer not null default 0,
---   bonds_honored integer not null default 0,
---   deposits_claimed integer not null default 0,
---   settlements integer not null default 0,
---   settlement_refunds integer not null default 0,
---   updated_at timestamptz not null default now()
--- );
+create table if not exists public.reputation (
+  wallet text primary key,
+  score integer not null default 50 check (score between 0 and 100),
+  total_invoices integer not null default 0,
+  acknowledged_invoices integer not null default 0,
+  invoices_paid integer not null default 0,
+  defaults integer not null default 0,
+  bonds_honored integer not null default 0,
+  deposits_claimed integer not null default 0,
+  settlements integer not null default 0,
+  settlement_refunds integer not null default 0,
+  updated_at timestamptz not null default now()
+);
 
 -- Package-scoped identity keeps repeated invoice numbers from fresh Testnet
 -- deployments separate without deleting historical rows:
@@ -205,11 +223,24 @@ create table if not exists public.receivables (
 --   where package_id is not null;
 
 alter table public.receivables enable row level security;
+alter table public.reputation enable row level security;
 
+drop policy if exists "Allow public read receivable index" on public.receivables;
 create policy "Allow public read receivable index"
 on public.receivables for select
-to public
+to anon, authenticated
 using (true);
+
+drop policy if exists "Allow public read reputation" on public.reputation;
+create policy "Allow public read reputation"
+on public.reputation for select
+to anon, authenticated
+using (true);
+
+grant select on public.receivables to anon, authenticated;
+grant select, insert, update, delete on public.receivables to service_role;
+grant select on public.reputation to anon, authenticated;
+grant select, insert, update, delete on public.reputation to service_role;
 ```
 
 Keep anonymous access read-only. The Cloudflare Function writes with
@@ -279,7 +310,10 @@ Run these before pushing:
 
 ```bash
 npm run build
-sui move test
+npm run test:score
+npm run test:indexer
+npm run test:reputation
+(cd move && sui move test)
 rg -n "(PRIVATE[_-]?KEY|MNEMONI[C]|SECRE[T]|API[_-]?KEY|TOKE[N]|PASSWOR[D]|sk-[A-Za-z0-9_-]+|ghp_[A-Za-z0-9_]+)" . --glob '!node_modules/**' --glob '!dist/**' --glob '!package-lock.json'
 ```
 

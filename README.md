@@ -4,9 +4,6 @@ React + TypeScript + Tailwind frontend for the InvoFi PRD.
 
 Live demo: https://invofi.dpdns.org/
 
-See [INVOFI_REBRAND_PRD.md](INVOFI_REBRAND_PRD.md) for the naming scope and
-legacy compatibility identifiers.
-
 InvoFi turns unpaid invoices into programmable Sui receivable objects. Issuers
 can create receivables, attach Walrus-backed evidence, list payment rights for
 financing, and let the final payer settle directly to the current verified
@@ -21,6 +18,8 @@ The app focuses on product workflow instead of pitch content:
 - Buyer portfolio
 - Payer acknowledgement before an invoice can be financed
 - Optional USDC security deposits with paid-release and default-claim paths
+- Full-value USDC settlement escrow with delivery confirmation and timeout refund
+- Explainable protocol-history scores derived from verified indexed outcomes
 - Sui dApp Kit wallet connection on Testnet
 - Public verification links for Sui objects, transaction digests, and Walrus blobs
 - Supabase-backed receivable index so created invoices survive refresh
@@ -69,7 +68,9 @@ Layer B three-wallet smoke proof:
 - Verified writes go through the Cloudflare Pages Functions indexer
   API, which verifies the submitted Sui transaction touched the receivable
   object before syncing Supabase.
-- Walrus stores invoice/evidence blobs for every created receivable.
+- Every create flow attempts to publish invoice and evidence blobs to Walrus.
+  Development can retain a placeholder when upload fails; production demos must
+  verify a real blob ID.
 - The health score is deterministic product logic, not an AI credit model.
 - The marketplace is a custom Sui transaction flow. Sui Kiosk is a future
   marketplace hardening path, not part of this MVP.
@@ -93,7 +94,9 @@ vars. A fully live proof should show:
     default claim with another receivable after its due date and grace period.
 11. Confirm the platform fee lands in the configured fee-recipient wallet during
    the buy/financing step.
-12. Refresh the app and confirm the row reloads from the configured index.
+12. On a second invoice, have the payer escrow the full amount, upload delivery
+    proof, confirm delivery, and release settlement to the current rights holder.
+13. Refresh and confirm escrow state and protocol-history badges reload from the index.
 
 ## Local Development
 
@@ -115,6 +118,16 @@ Then visit:
 http://localhost:5173
 ```
 
+Run the regression checks:
+
+```bash
+npm run test:score
+npm run test:indexer
+npm run test:reputation
+npm run build
+(cd move && sui move test)
+```
+
 ## Sui Contract Configuration
 
 Copy `.env.example` to `.env` after the Move package in `move/` is published:
@@ -128,6 +141,8 @@ VITE_INVO_RECEIVABLE_MODULE=receivable
 VITE_INVO_ESCROW_MODULE=receivable_escrow
 VITE_INVO_INVOICE_COUNTER_ID=0x...
 VITE_INVO_PLATFORM_CONFIG_ID=0x...
+VITE_INVO_FEE_RECIPIENT=0x...
+VITE_INVO_PLATFORM_FEE_BPS=100
 VITE_INVO_PAYMENT_COIN_TYPE=0x...::usdc::USDC
 VITE_INVO_PAYMENT_COIN_SYMBOL=USDC
 VITE_INVO_PAYMENT_COIN_DECIMALS=6
@@ -141,8 +156,9 @@ VITE_SUPABASE_ANON_KEY=your_publishable_or_anon_key
 ```
 
 The frontend has transaction builders for create, acknowledge, list, buy, pay,
-cancel, and security-deposit lock/release/claim actions. They require these
-values before building real Move calls.
+cancel, mark overdue, security-deposit lock/release/claim, and settlement
+escrow/confirm/release/refund. They require these values before building real
+Move calls.
 
 For Cloudflare production, set `VITE_INVO_APP_MODE=production` and
 `VITE_INVO_INDEXER_URL=/api`. Add these server-side Cloudflare Pages Function
@@ -186,6 +202,8 @@ MAILJET_API_SECRET=your_mailjet_api_secret
 INVOICE_EMAIL_FROM="InvoFi <invoices@your-domain.com>"
 INVOICE_REPLY_TO=support@your-domain.com
 INVO_PUBLIC_APP_URL=https://invofi.dpdns.org
+SUI_EXPLORER_URL=https://suiscan.xyz/testnet
+WALRUS_AGGREGATOR_URL=https://aggregator.walrus-testnet.walrus.space
 ```
 
 If `MAILJET_API_KEY`, `MAILJET_API_SECRET`, or `INVOICE_EMAIL_FROM` is missing, invoice creation
@@ -219,9 +237,10 @@ sui move build
 sui client publish --gas-budget 100000000
 ```
 
-After publishing to Testnet, copy the package ID, shared `InvoiceCounter`
-object ID, and shared `PlatformConfig` object ID into `.env` and the same
-Cloudflare Pages environment variables.
+For a first publish, copy the package ID, shared `InvoiceCounter`, and shared
+`PlatformConfig` IDs into the environment. For an upgrade, calls and sponsor
+allowlisting use the latest package ID while object validation and index filters
+continue using the original package ID.
 
 ## Platform Fee
 
@@ -297,6 +316,9 @@ Notes:
 - The `SPONSOR_PRIVATE_KEY` is a real secret — keep it only in Cloudflare
   Function env, keep the sponsor wallet topped up with SUI, and the abuse guard
   restricts sponsorship to the configured `RECEIVABLE_PACKAGE_ID`.
+- The backend refuses requests where the sponsor is also the application actor.
+  If that wallet is connected deliberately, the frontend submits a normal
+  single-signer transaction and that wallet pays its own gas.
 
 ## Walrus Evidence
 
@@ -332,9 +354,13 @@ This flow works best after publishing the Move package and configuring Supabase:
 5. Optionally lock a USDC security deposit from any connected wallet.
 6. Use the Issuer wallet to list payment rights.
 7. Switch to Buyer and buy the listed rights from the marketplace.
-8. Switch to Payer and pay the invoice using the configured payer wallet.
-9. Reconnect the depositor and release the deposit after payment.
-10. Refresh and confirm the state reloads from the configured index.
+8. Choose one terminal path:
+   - Direct settlement: Payer pays, then the depositor releases the Layer A bond.
+   - Escrowed settlement: Payer escrows the full amount, uploads delivery proof,
+     confirms delivery, and releases funds to the current payment recipient.
+9. For the Layer B timeout path, leave delivery unconfirmed until the deadline
+   and let the payer refund the escrow.
+10. Refresh and confirm escrow state and protocol-history badges reload from the index.
 
 ## Deployment Direction
 
@@ -372,13 +398,17 @@ offerings, investment advice, fiat custody, or real invoice financing.
 Production use would require legal review, KYB/KYC, AML screening, jurisdiction
 checks, invoice verification, privacy controls, and dispute handling.
 
-## Next Integration Steps
+## Remaining Production Hardening
 
-1. Keep Cloudflare Pages env vars aligned with the latest Testnet package,
-   `InvoiceCounter`, and `PlatformConfig` IDs.
-2. Run one live create -> acknowledge -> deposit -> list -> buy -> pay ->
-   release flow on Testnet after every contract republish.
-3. Verify platform fees land in the configured fee-recipient wallet during the
-   buy/financing step.
-4. Expand the production indexer/API if the app needs private search,
-   notifications, compliance workflows, or server-controlled access policies.
+1. Add background event replay so missed browser-triggered syncs repair automatically.
+2. Add authenticated organizations, payer invitations, and private invoice access.
+3. Replace public Testnet Walrus publishing with reliable private/encrypted evidence handling.
+4. Add production observability, rate limits, and compliance workflows before Mainnet.
+
+## Documentation Map
+
+- `SYSTEM_DESIGN.md`: current architecture and source-of-truth rules.
+- `DEPLOYMENT.md`: current environment, schema, and release checklist.
+- `RECEIVABLE_ESCROW_PRD.md`: implemented acknowledgement and Layers A/B/C.
+- `PRODUCTION_READINESS.md`: work still required before real users or Mainnet.
+- `NFT_ESCROW_EXTENSION_PRD.md`: archived, superseded NFT-collateral proposal.

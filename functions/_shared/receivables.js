@@ -126,14 +126,6 @@ export function invoiceToRowFromChain(invoice, chainInvoice) {
     metadata_checksum: chainFields?.metadata_checksum ?? invoice.metadataChecksum ?? null,
     acknowledged_at_ms: chainFields ? Number(chainFields.acknowledged_at_ms) : invoice.acknowledgedAtMs ?? null,
     acknowledged_tx: invoice.acknowledgedTx ?? null,
-    settlement_escrow_id: invoice.settlementEscrowId ?? null,
-    settlement_status: invoice.settlementStatus ?? null,
-    settlement_payer: invoice.settlementPayer ?? null,
-    settlement_amount_sui: invoice.settlementAmount ?? null,
-    settlement_delivery_confirmed: invoice.settlementDeliveryConfirmed ?? null,
-    settlement_deadline_ms: invoice.settlementDeadlineMs ?? null,
-    settlement_delivery_proof_blob_id: invoice.settlementDeliveryProofBlobId ?? null,
-    settlement_tx: invoice.settlementTx ?? null,
   };
 }
 

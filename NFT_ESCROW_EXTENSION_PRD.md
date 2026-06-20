@@ -1,5 +1,10 @@
 # InvoFi NFT Escrow Extension PRD
 
+> **Status: archived and not implemented.** This proposal was superseded by
+> fungible USDC protection in `RECEIVABLE_ESCROW_PRD.md`: Layer A security
+> deposits and Layer B settlement escrow. It remains only as a product-decision
+> record and must not be presented as part of the current application workflow.
+
 ## Purpose
 
 Add optional NFT collateral escrow to InvoFi so an invoice can be backed by an

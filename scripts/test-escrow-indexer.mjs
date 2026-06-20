@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { escrowUpdateFromTransaction } from "../functions/_shared/receivables.js";
+import { escrowUpdateFromTransaction, invoiceToRowFromChain } from "../functions/_shared/receivables.js";
 
 const packageId = `0x${"1".repeat(64)}`;
 const originalPackageId = `0x${"5".repeat(64)}`;
@@ -80,5 +80,31 @@ const originalPackageUpdate = escrowUpdateFromTransaction(
   invoiceId,
 );
 assert.equal(originalPackageUpdate?.settlement_status, "REFUNDED", "original and upgraded package events are accepted");
+
+const untrustedSettlementRow = invoiceToRowFromChain({
+  id: "INV-0001",
+  objectId: invoiceId,
+  txDigest: "unrelated-transaction",
+  issuer: payer,
+  payer,
+  paymentRecipient: payer,
+  buyer: null,
+  clientName: "Test",
+  clientEmail: "test@example.com",
+  description: "Test",
+  amount: 1,
+  dueDate: "2099-01-01",
+  status: "PENDING",
+  financingStatus: "NOT_LISTED",
+  financingPrice: 0,
+  blobId: "",
+  settlementStatus: "RELEASED",
+  settlementEscrowId: escrowId,
+}, null);
+assert.equal(
+  Object.hasOwn(untrustedSettlementRow, "settlement_status"),
+  false,
+  "browser-supplied settlement state must not enter the verified base row",
+);
 
 console.log("Escrow indexer scenarios passed.");

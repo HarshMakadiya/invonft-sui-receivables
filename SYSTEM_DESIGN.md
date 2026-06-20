@@ -11,6 +11,10 @@ InvoFi is a non-custodial receivables workflow:
 - Evidence is attached through Walrus blobs.
 - Buyers can purchase payment rights at a discount.
 - Payers settle to the current on-chain payment recipient.
+- Payers acknowledge invoices before financing.
+- Participants can add Layer A security deposits, while payers can use Layer B
+  full-value settlement escrow with delivery confirmation.
+- The index derives an explainable protocol-history score from verified outcomes.
 - The platform can collect a fee on financing purchases.
 
 For the current deployment, this is a strict Sui Testnet demo. It should behave
@@ -34,7 +38,7 @@ flowchart LR
   browser --> api
   api --> sui
   api --> db
-  browser --> db
+  browser -. development only .-> db
   browser --> explorer
 ```
 
@@ -55,6 +59,9 @@ Sui is the state authority for:
 - paid/listed/financed/overdue state
 - financing price
 - platform-fee routing
+- payer acknowledgement
+- Layer A deposit lock/release/default claim
+- Layer B escrow/delivery confirmation/release/refund
 
 Walrus is the evidence blob store for:
 
@@ -68,6 +75,8 @@ Supabase is an index/cache for:
 - search/filtering
 - shareable invoice pages
 - UI metadata not stored on-chain, such as client name/email/description
+- event-derived deposit and settlement projections
+- server-maintained protocol-history reputation projections
 
 Supabase must not be treated as the settlement authority.
 
@@ -93,7 +102,8 @@ Cloudflare Functions:
 - Holds server-side Supabase service role key.
 - Verifies submitted Sui transactions.
 - Reads current Sui object state.
-- Derives chain-owned fields before syncing the index.
+- Parses matching escrow events and derives chain-owned fields before syncing.
+- Recomputes reputation for affected wallets from indexed verified outcomes.
 
 Supabase:
 
@@ -119,8 +129,9 @@ sequenceDiagram
   B->>A: Sync invoice metadata + tx digest + object ID
   A->>S: Verify tx succeeded and touched object
   A->>S: Fetch current receivable object
-  A->>A: Derive chain-owned fields
+  A->>A: Parse escrow events + derive chain-owned fields
   A->>D: Upsert normalized index row
+  A->>D: Recompute affected wallet reputation
   A-->>B: Return normalized invoice
 ```
 
@@ -132,17 +143,37 @@ description. It must derive chain-owned fields from Sui.
 ```mermaid
 stateDiagram-v2
   [*] --> Pending
-  Pending --> Listed: issuer lists
+  Pending --> Acknowledged: payer acknowledges
+  Acknowledged --> Listed: issuer lists
   Listed --> Financed: buyer purchases rights
-  Listed --> Pending: issuer cancels listing
+  Listed --> Acknowledged: issuer cancels listing
   Pending --> Overdue: due date passed
+  Acknowledged --> Overdue: due date passed
   Overdue --> Paid: payer settles
   Pending --> Paid: payer settles
+  Acknowledged --> Paid: payer settles
   Financed --> Paid: payer settles to buyer
 ```
 
 Design invariant: after financing, payment must settle to `payment_recipient`,
 not necessarily the original issuer.
+
+Layer A and Layer B are separate shared-object lifecycles linked to the invoice:
+
+```mermaid
+stateDiagram-v2
+  state "Layer A deposit" as A {
+    [*] --> Locked
+    Locked --> Released: invoice paid + depositor releases
+    Locked --> Claimed: unpaid after due date + grace
+  }
+  state "Layer B settlement" as B {
+    [*] --> Escrowed
+    Escrowed --> Confirmed: payer confirms delivery
+    Confirmed --> Released: funds route to payment recipient
+    Escrowed --> Refunded: deadline passes unconfirmed
+  }
+```
 
 ## Security Rules
 
@@ -233,6 +264,8 @@ Production-style Testnet demo:
 - no demo role controls
 - no direct browser Supabase writes
 - Function verifies Sui transaction and object
+- latest package ID is used for calls/sponsorship; original package ID is used
+  for stable object-type validation after upgrades
 
 Mainnet production:
 
@@ -254,7 +287,7 @@ Mainnet production:
 
 ## Open Design Work
 
-- Event-driven indexer that reconstructs rows from Sui events.
+- Background event replay that repairs missed request-driven syncs.
 - Authenticated organization/business accounts.
 - Payer invite and acceptance flow.
 - Encrypted Walrus evidence and access grants.

@@ -7,4 +7,6 @@ export const appMode: AppMode =
     ? configuredMode
     : "development";
 
-export const isProductionMode = appMode === "production";
+// Staging exercises the same wallet and verified-index boundaries as production.
+// Development is the only mode that permits demo role controls and fallback rows.
+export const isProductionMode = appMode === "production" || appMode === "staging";

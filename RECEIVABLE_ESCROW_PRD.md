@@ -18,20 +18,22 @@ evidence alone does not):
 - **Phase 0 — Payer acknowledgement.** The payer cryptographically attests the debt is real *before* it can be financed. Directly attacks fake invoices and double-financing — the core fraud vectors. Highest-leverage differentiator and a prerequisite the rest builds on.
 - **A — USDC security deposit / bond.** Real, fungible downside protection for the buyer.
 - **B — Escrowed settlement.** Payer escrows funds upfront; released on delivery. Removes payer-default risk.
-- **C — On-chain reputation.** A score compounded from acknowledgement, escrow, and payment outcomes — the data moat.
+- **C — Protocol-history reputation.** An indexer-derived score compounded from
+  on-chain acknowledgement, escrow, and payment outcomes.
 
 Evidence (Walrus) proves a *document exists*; it does not prove the *debt is
 real*. Acknowledgement + economic enforcement (bond, reputation) is what makes
-financing fraud-resistant and self-underwriting.
+financing more fraud-resistant without claiming automated underwriting.
 
 **Confirmed product decision:** on default the bond is **trustless auto-claim** —
 after the due date + a grace window, the current payment-rights holder claims the
 bond directly on-chain. No arbiter.
 
-NFT collateral has already been fully removed; the package was republished to
-`0xef388e7bc18b107a35e3ae4cff7f587782ee612f6cc467964abb44f2964f7838` (modules
-`receivable`). This design adds a new `receivable_escrow` module to that package
-(upgrade or fresh publish).
+NFT collateral has been removed. The current Testnet package is v2 at
+`0x9d23d715ef896b652740efa738185e424094bb83eb982735f1b2283d1b9c0e4a`;
+the stable original package/object identity is
+`0x44135549f5c650da76f87662848d2a3aa46704a8b231e17cf180220f172190e6`.
+It contains `receivable` and `receivable_escrow`.
 
 ## Phase 0 — Payer acknowledgement (fraud resistance)
 
@@ -78,7 +80,8 @@ must acknowledge first; simplest is to have `invoice_for_testing` set
 
 ### Frontend / indexing
 - `buildAcknowledgeInvoiceTx`; an **"Acknowledge invoice"** action shown to the payer in the inspector; the **"List rights"** action is disabled/hidden until acknowledged; an **Acknowledged ✓ {date}** badge in the Receivable Passport and verification panel.
-- Supabase: `acknowledged_at` + `acknowledged_tx` columns, derived from the `InvoiceAcknowledged` event in [functions/_shared/receivables.js](functions/_shared/receivables.js) / sync.
+- Supabase: `acknowledged_at_ms` + `acknowledged_tx` columns. The timestamp is
+  read from the authoritative invoice object during verified sync.
 
 ### Adoption risk (the #1 risk — name it)
 Acknowledgement assumes the payer has a wallet and acts. Real B2B payers are
@@ -90,10 +93,11 @@ contract work.
 
 ## Layer A — Security-deposit / bond escrow
 
-**Implementation status:** Published to Sui Testnet in package
-`0x44135549f5c650da76f87662848d2a3aa46704a8b231e17cf180220f172190e6`.
+**Implementation status:** Published to Sui Testnet package v2
+`0x9d23d715ef896b652740efa738185e424094bb83eb982735f1b2283d1b9c0e4a`.
 The Move module, event-verified index sync, Supabase fields, frontend transaction
-builders, and deposit UI are implemented; three-wallet smoke testing remains.
+builders, deposit UI, and focused Move tests are implemented. The live Layer A
+default-claim path remains a release-checklist test rather than a missing layer.
 
 New module `invofi::receivable_escrow`, same package as
 [receivable.move](move/sources/receivable.move). Reuses the lock/release/claim
@@ -127,11 +131,11 @@ The beneficiary is intentionally **not stored** — `claim_deposit` reads the li
 
 ## Layer B — Escrowed settlement
 
-**Implementation status:** Move lifecycle, 8 focused settlement tests, frontend
-transaction builders and role-gated controls, Walrus delivery proof, Supabase
-columns, and Sui-event-derived index updates are implemented locally. A package
-publish/upgrade and three-wallet Testnet smoke test remain before this layer is
-deployed.
+**Implementation status:** Deployed in package v2. The Move lifecycle, 8 focused
+settlement tests, frontend transaction builders and role-gated controls, Walrus
+delivery proof, Supabase columns, and Sui-event-derived index updates are
+implemented. A real three-wallet Testnet release completed in transaction
+`4wVrK66YqP1rj6ncN7pH9KdGba3XmQvYxfkg6eE1skgW`.
 
 ```move
 public struct SettlementEscrow<phantom CoinT> has key, store {
@@ -146,14 +150,14 @@ public struct SettlementEscrow<phantom CoinT> has key, store {
 }
 ```
 
-- `escrow_payment<CoinT>(invoice, coin, deadline_ms, ctx)` — require `sender == receivable::payer(invoice)`
+- `escrow_payment<CoinT>(invoice, coin, deadline_ms, clock, ctx)` — require `sender == receivable::payer(invoice)`
   and `coin.value() == receivable::amount_mist(invoice)` (full invoice); store balance; share; emit `SettlementEscrowed`.
 - `confirm_delivery<CoinT>(escrow, invoice, evidence_blob_id: String, ctx)` — `sender == payer`
   attests receipt of goods; set `delivery_confirmed = true`; emit `DeliveryConfirmed { evidence_blob_id }` (ties to Walrus).
-- `release_settlement<CoinT>(escrow, invoice: &mut, ctx)` — require `delivery_confirmed`; transfer balance
+- `release_settlement<CoinT>(escrow, invoice: &mut, clock, ctx)` — require `delivery_confirmed`; transfer balance
   to `receivable::payment_recipient(invoice)`; mark the invoice paid via a new package-internal
   `receivable::settle_from_escrow`; emit `SettlementReleased`; delete.
-- `refund<CoinT>(escrow, invoice, clock, ctx)` — require `!delivery_confirmed && now > deadline_ms`,
+- `refund_settlement<CoinT>(escrow, invoice, clock, ctx)` — require `!delivery_confirmed && now > deadline_ms`,
   `sender == payer`; return balance to payer; emit `SettlementRefunded`; delete.
 
 **Known limitation (document, don't hide):** payer-confirmed delivery means a
@@ -194,14 +198,21 @@ only by the service role; verified transaction syncs recompute affected wallets.
 The inspector and marketplace display issuer/payer history badges. This is not
 presented as underwriting or a credit rating.
 
-Derive a per-wallet score from indexed events; no new contract initially (the
-history is the moat; promote to an on-chain registry later).
+Derive a per-wallet score from verified indexed outcomes; no reputation
+contract is used in v1.
 
-- **Inputs** (from Sui events + receivable status): invoices paid on time, late payments, defaults (`DepositClaimed`), bonds posted and honoured (`DepositReleased`), settlements completed (`SettlementReleased`), escrow-then-refund/grief signals.
+- **Inputs:** payer acknowledgements, paid invoices, overdue/defaulted invoices,
+  honoured deposits, completed settlements, and settlement refunds.
 - **Output:** a 0–100 score + counts per wallet, recomputed in the indexer.
 - **Storage:** a `reputation` table (`wallet`, `score`, `invoices_paid`, `defaults`, `bonds_honored`, `settlements`, `updated_at`).
 - **UI:** a reputation badge next to issuer/payer addresses in the inspector and marketplace.
 - **Future:** an on-chain `ReputationRegistry` shared object updated by the escrow module on terminal events.
+
+The implemented score starts neutral at 50: up to five acknowledgements add 3
+points each, up to five paid invoices add 6 each, up to three honoured bonds add
+4 each, and up to three completed settlements add 6 each. Defaults subtract 20
+and settlement refunds subtract 5. The result is clamped to 0–100 and presented
+as protocol history, not creditworthiness.
 
 ## Frontend
 
@@ -209,29 +220,22 @@ history is the moat; promote to an on-chain registry later).
 `buildLockDepositTx`, `buildReleaseDepositTx`, `buildClaimDepositTx`,
 `buildEscrowPaymentTx`, `buildConfirmDeliveryTx`, `buildReleaseSettlementTx`,
 `buildRefundSettlementTx`. USDC amounts via the existing `coinWithBalance` +
-`toBaseUnits` pattern; add `getEscrowTarget` back in
+`toBaseUnits` pattern and `getReceivableEscrowTarget` from
 [receivableContract.ts](src/lib/receivableContract.ts) (`VITE_INVO_ESCROW_MODULE=receivable_escrow`).
 
 ### Types — [src/types/receivable.ts](src/types/receivable.ts)
-```ts
-type Escrow = {
-  kind: "deposit" | "settlement";
-  status: string;          // LOCKED/RELEASED/CLAIMED or ESCROWED/RELEASED/REFUNDED
-  escrowObjectId?: string;
-  amount?: number;
-  depositor?: string;      // A
-  graceUntil?: string;     // A
-  deliveryConfirmed?: boolean; // B
-  deadline?: string;       // B
-  lockTx?: string; closeTx?: string;
-};
-type Reputation = { score: number; invoicesPaid: number; defaults: number };
-// Invoice gains: escrow?: Escrow; issuerReputation?/payerReputation?: Reputation
-```
+
+`Invoice` stores flat `deposit*` and `settlement*` projection fields matching
+the Supabase columns, plus `issuerReputation`, `payerReputation`, and
+`buyerReputation`. Status unions are `LOCKED | RELEASED | CLAIMED` and
+`ESCROWED | RELEASED | REFUNDED`.
 
 ### UI — [src/App.tsx](src/App.tsx)
-- **Create form:** optional "Require security deposit (bond)" and "Use escrowed settlement" toggles.
-- **Inspector panel** ("Trust & escrow"): shows escrow kind/status/amount; role- and state-gated actions — Lock deposit / Release / Claim (A); Escrow payment / Confirm delivery / Release / Refund (B); plus escrow-object verification link.
+- **Create form:** creates the receivable and evidence; escrow protection is
+  added later from the invoice inspector.
+- **Inspector panels:** role- and state-gated Lock deposit / Release / Claim (A)
+  and Escrow payment / Confirm delivery / Release / Refund (B), with public
+  escrow-object verification links.
 - **Marketplace badges:** "USDC bond locked · {amount}" and "Payment escrowed", shown before buying.
 - **Reputation badge** near issuer/payer.
 All wired through the existing `executeTransaction`/sponsorship flow.
@@ -245,15 +249,11 @@ commands), so the guard stays satisfied.
 
 ## Indexing / Supabase
 
-Reuse the dropped `collateral_*` columns by renaming the migration to escrow
-fields (or add fresh): `escrow_kind`, `deposit_escrow_id`, `deposit_amount`,
-`deposit_status`, `settlement_escrow_id`, `settlement_amount`,
-`settlement_status`, `delivery_confirmed`, `escrow_deadline`, plus the
+The index uses explicit `deposit_*` and `settlement_*` columns plus the
 `reputation` table. Event-driven derivation in
 [functions/_shared/receivables.js](functions/_shared/receivables.js) (parse the
-`Deposit*`/`Settlement*`/`Delivery*` events) behind a new
-`functions/api/receivables/escrow.js` endpoint (replaces the deleted
-`collateral.js`), keyed on `invoice_id` from the event. Mirror fields in
+`Deposit*`/`Settlement*`/`Delivery*` events) runs through the existing verified
+`functions/api/receivables/sync.js` endpoint, keyed on `invoice_id`. Mirror fields in
 [src/lib/supabaseReceivables.ts](src/lib/supabaseReceivables.ts). Authoritative
 fields come from events, not the browser.
 
@@ -267,8 +267,8 @@ its event.
 ## Build phases
 0. **Complete — Payer acknowledgement:** Move gate, tests, frontend action, badge, and indexed fields.
 1. **Complete — A / deposit escrow:** Move lifecycle, tests, event-verified indexing, and role-gated UI.
-2. **Complete locally — B / settlement escrow:** full-payment escrow, delivery confirmation, release/refund, and 8 focused Move tests.
-3. **Complete for inspector flow — Frontend A+B:** contract config, tx builders, types, role/state controls, modals, and verification links. Create-form policy toggles and marketplace badges remain optional UX follow-ups.
+2. **Complete and deployed — B / settlement escrow:** full-payment escrow, delivery confirmation, release/refund, 8 focused Move tests, and a real Testnet release.
+3. **Complete — Frontend A+B:** contract config, tx builders, projection types, role/state controls, modals, marketplace badges, and verification links.
 4. **Complete — Indexing A+B:** Supabase columns, browser mapping, and Sui-event-derived updates through the verified sync endpoint.
 5. **Complete — C / reputation:** deterministic indexer scoring, protected `reputation` table, and issuer/payer UI badges.
 6. **Complete — Ship Layer B:** version 2 is published at `0x9d23d715ef896b652740efa738185e424094bb83eb982735f1b2283d1b9c0e4a` (upgrade transaction `Cf7tqkkTDRQ7JZ6BRHp4c9ZQRw6qkWTBWCCBp5A7xZQz`). Cloudflare production IDs are configured. A real issuer/buyer/payer Testnet flow completed through create, acknowledge, list, finance, escrow, delivery confirmation, and release; final settlement transaction: `4wVrK66YqP1rj6ncN7pH9KdGba3XmQvYxfkg6eE1skgW`.
@@ -286,4 +286,4 @@ its event.
 - Who posts the A bond by default — issuer (proves invoice is genuine) or payer (commitment to pay)? (Contract allows either; UI default TBD.)
 - Should A and B be combinable on one invoice, or mutually exclusive in the UI?
 - Grace-period default (e.g., 0 / 3 / 7 days) and whether it's issuer-set or platform-fixed.
-- Reputation: purely indexer-derived for now, or stand up the on-chain registry in v1?
+- Reputation remains indexer-derived; an on-chain registry is a future protocol decision.
