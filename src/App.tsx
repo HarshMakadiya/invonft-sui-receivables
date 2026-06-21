@@ -42,7 +42,12 @@ import { compactNumber, formatToken, shortAddress } from "./lib/format";
 import { healthScore } from "./lib/healthScore";
 import { createInvoicePdfBlob, downloadInvoicePdf } from "./lib/invoicePdf";
 import { fetchReceivablesFromIndexer, isIndexerConfigured, syncReceivableWithIndexer } from "./lib/receivableIndex";
-import { getReceivableContractReadiness, receivableContract } from "./lib/receivableContract";
+import {
+  getReceivableContractReadiness,
+  getReceivableEscrowObjectType,
+  getReceivableObjectType,
+  receivableContract,
+} from "./lib/receivableContract";
 import {
   buildAcknowledgeInvoiceTx,
   buildBuyReceivableTx,
@@ -611,7 +616,7 @@ function App() {
     }
 
     const gracePeriodMs = Math.round(graceDays * 24 * 60 * 60 * 1000);
-    const escrowType = `${receivableContract.packageId}::${receivableContract.escrowModuleName}::DepositEscrow`;
+    const escrowType = getReceivableEscrowObjectType("DepositEscrow");
     const result = await trySubmitTransaction(
       "Deposit transaction",
       () => buildLockDepositTx({ invoiceObjectId: invoice.objectId, amountSui: amount, gracePeriodMs }),
@@ -687,7 +692,7 @@ function App() {
     }
 
     const deadlineMs = Date.now() + deadlineDays * 24 * 60 * 60 * 1000;
-    const escrowType = `${receivableContract.packageId}::${receivableContract.escrowModuleName}::SettlementEscrow`;
+    const escrowType = getReceivableEscrowObjectType("SettlementEscrow");
     const result = await trySubmitTransaction(
       "Settlement escrow transaction",
       () => buildEscrowPaymentTx({ invoiceObjectId: invoice.objectId, amountSui: invoice.amount, deadlineMs }),
@@ -881,7 +886,7 @@ function App() {
     }
 
     const dueDateMs = new Date(dueDate).getTime();
-    const invoiceReceivableType = `${receivableContract.packageId}::${receivableContract.moduleName}::InvoiceReceivable`;
+    const invoiceReceivableType = getReceivableObjectType();
     const createResult = await trySubmitTransaction(
       "Create transaction",
       () =>

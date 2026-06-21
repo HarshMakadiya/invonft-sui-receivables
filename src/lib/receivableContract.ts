@@ -1,18 +1,35 @@
 export type ReceivableContractConfig = {
   packageId: string;
+  originalPackageId: string;
   moduleName: string;
   escrowModuleName: string;
   invoiceCounterId: string;
   platformConfigId: string;
 };
 
+const packageId = import.meta.env.VITE_INVO_RECEIVABLE_PACKAGE_ID?.trim() ?? "";
+
 export const receivableContract: ReceivableContractConfig = {
-  packageId: import.meta.env.VITE_INVO_RECEIVABLE_PACKAGE_ID ?? "",
+  packageId,
+  originalPackageId: import.meta.env.VITE_INVO_ORIGINAL_PACKAGE_ID?.trim() || packageId,
   moduleName: import.meta.env.VITE_INVO_RECEIVABLE_MODULE ?? "receivable",
   escrowModuleName: import.meta.env.VITE_INVO_ESCROW_MODULE ?? "receivable_escrow",
   invoiceCounterId: import.meta.env.VITE_INVO_INVOICE_COUNTER_ID ?? "",
   platformConfigId: import.meta.env.VITE_INVO_PLATFORM_CONFIG_ID ?? "",
 };
+
+export function getReceivableObjectType(config = receivableContract) {
+  requireReceivableContract(config);
+  return `${config.originalPackageId}::${config.moduleName}::InvoiceReceivable`;
+}
+
+export function getReceivableEscrowObjectType(
+  objectName: "DepositEscrow" | "SettlementEscrow",
+  config = receivableContract,
+) {
+  requireReceivableContract(config);
+  return `${config.originalPackageId}::${config.escrowModuleName}::${objectName}`;
+}
 
 export function getReceivableTarget(functionName: string, config = receivableContract) {
   requireReceivableContract(config);
