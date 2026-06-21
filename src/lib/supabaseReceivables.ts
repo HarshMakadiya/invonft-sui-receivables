@@ -80,7 +80,7 @@ export async function saveReceivableToDb(invoice: Invoice) {
 
   const row = invoiceToRow(invoice);
   const updateFilter = row.sui_object_id
-    ? `sui_object_id=eq.${encodeURIComponent(row.sui_object_id)}`
+    ? `sui_object_id=ilike.${encodeURIComponent(row.sui_object_id)}`
     : `invoice_id=eq.${encodeURIComponent(row.invoice_id)}`;
 
   const updateResponse = await fetch(`${restBaseUrl()}/receivables?${updateFilter}`, {
@@ -131,14 +131,14 @@ function requestHeaders(prefer?: string) {
 
 function invoiceToRow(invoice: Invoice): ReceivableRow {
   return {
-    package_id: invoice.packageId ?? (receivablePackageId || null),
+    package_id: (invoice.packageId ?? (receivablePackageId || null))?.toLowerCase(),
     invoice_id: invoice.id,
-    sui_object_id: isPersistableObjectId(invoice.objectId) ? invoice.objectId : null,
+    sui_object_id: isPersistableObjectId(invoice.objectId) ? invoice.objectId.toLowerCase() : null,
     tx_digest: invoice.txDigest ?? null,
     blob_id: invoice.blobId || null,
-    issuer_wallet: invoice.issuer,
-    payer_wallet: invoice.payer || null,
-    buyer_wallet: invoice.buyer,
+    issuer_wallet: invoice.issuer.toLowerCase(),
+    payer_wallet: invoice.payer ? invoice.payer.toLowerCase() : null,
+    buyer_wallet: invoice.buyer ? invoice.buyer.toLowerCase() : null,
     client_name: invoice.clientName,
     client_email: invoice.clientEmail || null,
     description: invoice.description || null,
@@ -150,15 +150,15 @@ function invoiceToRow(invoice: Invoice): ReceivableRow {
     metadata_checksum: invoice.metadataChecksum ?? null,
     acknowledged_at_ms: invoice.acknowledgedAtMs ?? null,
     acknowledged_tx: invoice.acknowledgedTx ?? null,
-    deposit_escrow_id: invoice.depositEscrowId ?? null,
+    deposit_escrow_id: invoice.depositEscrowId ? invoice.depositEscrowId.toLowerCase() : null,
     deposit_status: invoice.depositStatus ?? null,
-    deposit_depositor: invoice.depositDepositor ?? null,
+    deposit_depositor: invoice.depositDepositor ? invoice.depositDepositor.toLowerCase() : null,
     deposit_amount_sui: invoice.depositAmount ?? null,
     deposit_grace_period_ms: invoice.depositGracePeriodMs ?? null,
     deposit_tx: invoice.depositTx ?? null,
-    settlement_escrow_id: invoice.settlementEscrowId ?? null,
+    settlement_escrow_id: invoice.settlementEscrowId ? invoice.settlementEscrowId.toLowerCase() : null,
     settlement_status: invoice.settlementStatus ?? null,
-    settlement_payer: invoice.settlementPayer ?? null,
+    settlement_payer: invoice.settlementPayer ? invoice.settlementPayer.toLowerCase() : null,
     settlement_amount_sui: invoice.settlementAmount ?? null,
     settlement_delivery_confirmed: invoice.settlementDeliveryConfirmed ?? null,
     settlement_deadline_ms: invoice.settlementDeadlineMs ?? null,

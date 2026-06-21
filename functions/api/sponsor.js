@@ -65,17 +65,19 @@ export async function onRequestPost({ request, env }) {
       const data = tx.getData();
       const commands = Array.isArray(data?.commands) ? data.commands : [];
       const moveCalls = commands.filter((command) => command?.MoveCall);
-      const hasReceivableCall = moveCalls.some((command) => command.MoveCall.package === allowedPackage);
+      const allowedPackageLower = allowedPackage.toLowerCase();
+      const hasReceivableCall = moveCalls.some((command) => String(command.MoveCall.package ?? "").toLowerCase() === allowedPackageLower);
       const onlyAllowedCalls =
         moveCalls.length > 0 &&
         moveCalls.every((command) => {
           const moveCall = command.MoveCall;
-          if (moveCall.package === allowedPackage) {
+          const pkg = String(moveCall.package ?? "").toLowerCase();
+          if (pkg === allowedPackageLower) {
             return true;
           }
 
           const allowedFunctions = ALLOWED_FRAMEWORK_COIN_CALLS[moveCall.module];
-          return moveCall.package === "0x2" && Boolean(allowedFunctions?.has(moveCall.function));
+          return pkg === "0x2" && Boolean(allowedFunctions?.has(moveCall.function));
         });
 
       if (!hasReceivableCall || !onlyAllowedCalls) {

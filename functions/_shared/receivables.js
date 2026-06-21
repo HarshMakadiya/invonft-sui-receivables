@@ -107,14 +107,14 @@ export function invoiceToRowFromChain(invoice, chainInvoice) {
   const paymentRecipient = chainFields?.payment_recipient ?? invoice.paymentRecipient ?? invoice.issuer;
 
   return {
-    package_id: chainInvoice?.type?.split("::")[0] ?? invoice.packageId ?? null,
+    package_id: (chainInvoice?.type?.split("::")[0] ?? invoice.packageId ?? null)?.toLowerCase(),
     invoice_id: chainFields ? invoiceIdFromNumber(chainFields.invoice_number) : invoice.id,
-    sui_object_id: chainInvoice?.objectId ?? invoice.objectId,
+    sui_object_id: (chainInvoice?.objectId ?? invoice.objectId)?.toLowerCase(),
     tx_digest: invoice.txDigest ?? null,
     blob_id: chainFields ? chainFields.blob_id || null : invoice.blobId || null,
-    issuer_wallet: chainFields?.issuer ?? invoice.issuer,
-    payer_wallet: chainFields ? chainFields.payer || null : invoice.payer || null,
-    buyer_wallet: financingStatus === "FINANCED" || invoice.buyer ? paymentRecipient : null,
+    issuer_wallet: (chainFields?.issuer ?? invoice.issuer)?.toLowerCase(),
+    payer_wallet: (chainFields ? chainFields.payer || null : invoice.payer || null)?.toLowerCase(),
+    buyer_wallet: (financingStatus === "FINANCED" || invoice.buyer ? paymentRecipient : null)?.toLowerCase(),
     client_name: invoice.clientName,
     client_email: invoice.clientEmail || null,
     description: invoice.description || null,
@@ -273,15 +273,30 @@ export function validateInvoiceForSync(invoice) {
 }
 
 export async function fetchSuiTransaction(env, txDigest) {
-  const payload = await suiRpc(env, "sui_getTransactionBlock", [
-    txDigest,
-    {
-      showEffects: true,
-      showEvents: true,
-      showObjectChanges: true,
-    },
-  ]);
-  return payload.result;
+  let attempts = 0;
+  const maxAttempts = 5;
+  let delay = 500;
+
+  while (attempts < maxAttempts) {
+    try {
+      const payload = await suiRpc(env, "sui_getTransactionBlock", [
+        txDigest,
+        {
+          showEffects: true,
+          showEvents: true,
+          showObjectChanges: true,
+        },
+      ]);
+      return payload.result;
+    } catch (error) {
+      attempts++;
+      if (attempts >= maxAttempts) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      delay *= 2;
+    }
+  }
 }
 
 export function isSuccessfulTransaction(tx) {
@@ -289,8 +304,26 @@ export function isSuccessfulTransaction(tx) {
 }
 
 export function transactionTouchesObject(tx, objectId) {
+  const normalizedId = String(objectId ?? "").toLowerCase();
+
+  // 1. Check objectChanges if present
   const objectChanges = Array.isArray(tx?.objectChanges) ? tx.objectChanges : [];
-  return objectChanges.some((change) => change.objectId === objectId);
+  if (objectChanges.some((change) => String(change?.objectId ?? "").toLowerCase() === normalizedId)) {
+    return true;
+  }
+
+  // 2. Check effects mutated, created, deleted, unwrapped, or modifiedAtVersions
+  const effects = tx?.effects;
+  if (effects) {
+    const checkReference = (item) => String(item?.reference?.objectId ?? "").toLowerCase() === normalizedId;
+    if (Array.isArray(effects.mutated) && effects.mutated.some(checkReference)) return true;
+    if (Array.isArray(effects.created) && effects.created.some(checkReference)) return true;
+    if (Array.isArray(effects.deleted) && effects.deleted.some((item) => String(item?.objectId ?? "").toLowerCase() === normalizedId)) return true;
+    if (Array.isArray(effects.unwrapped) && effects.unwrapped.some(checkReference)) return true;
+    if (Array.isArray(effects.modifiedAtVersions) && effects.modifiedAtVersions.some((item) => String(item?.objectId ?? "").toLowerCase() === normalizedId)) return true;
+  }
+
+  return false;
 }
 
 export function transactionHasEvent(tx, eventName) {
@@ -325,9 +358,9 @@ export function escrowUpdateFromTransaction(env, tx, invoiceObjectId) {
     const eventName = parts[2];
     if (eventName === "DepositLocked") {
       return {
-        deposit_escrow_id: String(data.escrow_id ?? ""),
+        deposit_escrow_id: String(data.escrow_id ?? "").toLowerCase(),
         deposit_status: "LOCKED",
-        deposit_depositor: String(data.depositor ?? ""),
+        deposit_depositor: String(data.depositor ?? "").toLowerCase(),
         deposit_amount_sui: fromBaseUnits(normalizeU64(data.amount)),
         deposit_grace_period_ms: Number(normalizeU64(data.grace_period_ms)),
         deposit_tx: tx.digest ?? null,
@@ -347,9 +380,9 @@ export function escrowUpdateFromTransaction(env, tx, invoiceObjectId) {
     }
     if (eventName === "SettlementEscrowed") {
       return {
-        settlement_escrow_id: String(data.escrow_id ?? ""),
+        settlement_escrow_id: String(data.escrow_id ?? "").toLowerCase(),
         settlement_status: "ESCROWED",
-        settlement_payer: String(data.payer ?? ""),
+        settlement_payer: String(data.payer ?? "").toLowerCase(),
         settlement_amount_sui: fromBaseUnits(normalizeU64(data.amount)),
         settlement_delivery_confirmed: false,
         settlement_deadline_ms: Number(normalizeU64(data.deadline_ms)),
@@ -405,7 +438,13 @@ export async function fetchSuiReceivableObject(env, objectId) {
     throw new Error("Receivable object was not found on Sui.");
   }
 
-  const expectedPackageId = env.RECEIVABLE_ORIGINAL_PACKAGE_ID?.trim() || env.RECEIVABLE_PACKAGE_ID?.trim() || env.VITE_INVO_RECEIVABLE_PACKAGE_ID?.trim();
+  const packageIds = [
+    env.RECEIVABLE_ORIGINAL_PACKAGE_ID?.trim(),
+    env.RECEIVABLE_PACKAGE_ID?.trim(),
+    env.VITE_INVO_ORIGINAL_PACKAGE_ID?.trim(),
+    env.VITE_INVO_RECEIVABLE_PACKAGE_ID?.trim(),
+  ].filter(Boolean).map((id) => id.toLowerCase());
+
   const expectedModule = env.RECEIVABLE_MODULE?.trim() || env.VITE_INVO_RECEIVABLE_MODULE?.trim() || "receivable";
   // The object is generic over the payment coin, so its type carries a
   // `<...::usdc::USDC>` argument (e.g. `PKG::receivable::InvoiceReceivable<...>`).
@@ -417,8 +456,12 @@ export async function fetchSuiReceivableObject(env, objectId) {
     throw new Error("Sui object is not an InvoiceReceivable.");
   }
 
-  if (expectedPackageId && !String(objectType).startsWith(`${expectedPackageId}::`)) {
-    throw new Error("Receivable object belongs to a different package.");
+  const objectTypeLower = String(objectType).toLowerCase();
+  if (packageIds.length > 0) {
+    const belongsToPackage = packageIds.some((pkgId) => objectTypeLower.startsWith(`${pkgId}::`));
+    if (!belongsToPackage) {
+      throw new Error("Receivable object belongs to a different package.");
+    }
   }
 
   const fields = content.fields;
@@ -449,7 +492,7 @@ export async function upsertInvoice(env, invoice, chainInvoice, escrowUpdate = n
     ...(escrowUpdate ?? {}),
   };
   const updateResponse = await fetch(
-    `${baseUrl}/rest/v1/receivables?sui_object_id=eq.${encodeURIComponent(row.sui_object_id)}`,
+    `${baseUrl}/rest/v1/receivables?sui_object_id=ilike.${encodeURIComponent(row.sui_object_id)}`,
     {
       method: "PATCH",
       headers: supabaseHeaders(serviceRoleKey, "return=representation"),
@@ -486,7 +529,7 @@ export async function upsertInvoice(env, invoice, chainInvoice, escrowUpdate = n
 export async function receivableExists(env, objectId) {
   const { baseUrl, serviceRoleKey } = getSupabaseConfig(env);
   const response = await fetch(
-    `${baseUrl}/rest/v1/receivables?select=sui_object_id&sui_object_id=eq.${encodeURIComponent(objectId)}&limit=1`,
+    `${baseUrl}/rest/v1/receivables?select=sui_object_id&sui_object_id=ilike.${encodeURIComponent(String(objectId ?? "").toLowerCase())}&limit=1`,
     {
       headers: supabaseHeaders(serviceRoleKey),
     },
