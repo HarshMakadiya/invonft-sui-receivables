@@ -623,7 +623,15 @@ function App() {
       escrowType,
     );
     if (!result?.createdObjectId) {
-      if (result) notify("Deposit was submitted, but its escrow object could not be resolved yet.");
+      if (result) {
+        updateInvoice({
+          ...invoice,
+          depositTx: result.digest,
+          txDigest: result.digest,
+          events: [...invoice.events, `Security deposit submitted: ${shortAddress(result.digest)}`],
+        });
+        notify("Deposit submitted; its escrow ID is being reconciled from the verified Sui event.");
+      }
       return;
     }
 
@@ -699,7 +707,15 @@ function App() {
       escrowType,
     );
     if (!result?.createdObjectId) {
-      if (result) notify("Payment was escrowed, but its settlement object could not be resolved yet.");
+      if (result) {
+        updateInvoice({
+          ...invoice,
+          settlementTx: result.digest,
+          txDigest: result.digest,
+          events: [...invoice.events, `Settlement escrow submitted: ${shortAddress(result.digest)}`],
+        });
+        notify("Payment escrowed; its settlement ID is being reconciled from the verified Sui event.");
+      }
       return;
     }
 

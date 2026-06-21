@@ -14,6 +14,7 @@ Live demo URL: https://invofi.dpdns.org/
   - `VITE_INVO_APP_MODE=production`
   - `VITE_INVO_RECEIVABLE_PACKAGE_ID`
   - `VITE_INVO_ORIGINAL_PACKAGE_ID`
+  - `VITE_INVO_SETTLEMENT_ESCROW_PACKAGE_ID` (optional until the next package upgrade; currently the v2 package ID)
   - `VITE_INVO_RECEIVABLE_MODULE=receivable`
   - `VITE_INVO_ESCROW_MODULE=receivable_escrow`
   - `VITE_INVO_INVOICE_COUNTER_ID`
@@ -57,6 +58,8 @@ environment variable for Functions. Do not add it to any `VITE_*` variable.
 `RECEIVABLE_PACKAGE_ID` is the latest package used for calls and sponsorship.
 `RECEIVABLE_ORIGINAL_PACKAGE_ID` is the stable object-type identity retained
 across upgrades. Both are public and are required after a package upgrade.
+Layer B's `SettlementEscrow` was introduced in v2, so its type origin is the v2
+package rather than `RECEIVABLE_ORIGINAL_PACKAGE_ID`.
 
 `MAILJET_API_KEY` and `MAILJET_API_SECRET` are also secret. The email notification path runs only after
 a verified `InvoiceCreated` transaction is synced, and is skipped when email env

@@ -137,6 +137,7 @@ VITE_INVO_APP_MODE=development
 VITE_INVO_INDEXER_URL=
 VITE_INVO_RECEIVABLE_PACKAGE_ID=0x...
 VITE_INVO_ORIGINAL_PACKAGE_ID=0x...
+VITE_INVO_SETTLEMENT_ESCROW_PACKAGE_ID=0x...
 VITE_INVO_RECEIVABLE_MODULE=receivable
 VITE_INVO_ESCROW_MODULE=receivable_escrow
 VITE_INVO_INVOICE_COUNTER_ID=0x...
@@ -182,7 +183,10 @@ environment variables for Functions. Do not commit it and do not expose it as a
 `RECEIVABLE_PACKAGE_ID` is the latest package used for Move calls and sponsor
 allowlisting. After an upgrade, `RECEIVABLE_ORIGINAL_PACKAGE_ID` remains the
 original package identity carried by receivable object types and index rows.
-Both values are public.
+`VITE_INVO_SETTLEMENT_ESCROW_PACKAGE_ID` is the type origin of the Layer B
+`SettlementEscrow`; it defaults to the current package and should remain pinned
+to the package version that introduced that struct after later upgrades. These
+values are public.
 
 Walrus URLs are public Testnet endpoints. They are not secrets. Mainnet should
 not use a public unauthenticated publisher.

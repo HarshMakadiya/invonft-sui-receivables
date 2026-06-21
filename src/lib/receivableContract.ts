@@ -1,6 +1,7 @@
 export type ReceivableContractConfig = {
   packageId: string;
   originalPackageId: string;
+  settlementEscrowPackageId: string;
   moduleName: string;
   escrowModuleName: string;
   invoiceCounterId: string;
@@ -12,6 +13,9 @@ const packageId = import.meta.env.VITE_INVO_RECEIVABLE_PACKAGE_ID?.trim() ?? "";
 export const receivableContract: ReceivableContractConfig = {
   packageId,
   originalPackageId: import.meta.env.VITE_INVO_ORIGINAL_PACKAGE_ID?.trim() || packageId,
+  // SettlementEscrow was introduced in the v2 upgrade, so its type origin is
+  // v2 rather than the package's original publication address.
+  settlementEscrowPackageId: import.meta.env.VITE_INVO_SETTLEMENT_ESCROW_PACKAGE_ID?.trim() || packageId,
   moduleName: import.meta.env.VITE_INVO_RECEIVABLE_MODULE ?? "receivable",
   escrowModuleName: import.meta.env.VITE_INVO_ESCROW_MODULE ?? "receivable_escrow",
   invoiceCounterId: import.meta.env.VITE_INVO_INVOICE_COUNTER_ID ?? "",
@@ -28,7 +32,10 @@ export function getReceivableEscrowObjectType(
   config = receivableContract,
 ) {
   requireReceivableContract(config);
-  return `${config.originalPackageId}::${config.escrowModuleName}::${objectName}`;
+  const typeOriginPackageId = objectName === "SettlementEscrow"
+    ? config.settlementEscrowPackageId
+    : config.originalPackageId;
+  return `${typeOriginPackageId}::${config.escrowModuleName}::${objectName}`;
 }
 
 export function getReceivableTarget(functionName: string, config = receivableContract) {
